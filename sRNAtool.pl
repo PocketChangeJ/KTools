@@ -167,27 +167,78 @@ USAGE: $0 unique [options]
 		$output_file =~ s/\..*$/_uniq\.fasta/;
 		die "[ERR]Output exist, $output_file\n" if -s $output_file;
 		
-		my ($fh, $format, $total_read, $length);
+		my ($fh, $format, $total_seq_num, $length);
 		if ($input_file =~ m/\.gz$/) {
 			open($fh, '-|', "gzip -cd $input_file") || die $!;
 		} else {
 			open($fh, $input_file) || die $!;
 		}
 
+		# load seq/read count to hash
+		my %seq_count;
 		while(<$fh>)
 		{
-				
+			chomp; 
+			my $id = $_; $id =~ s/ .*//;
+			$format = '';
+			if ($id =~ m/^>/) { $format = 'fasta'; }
+			elsif ($id =~ m/^@/) { $format = 'fastq'; }
+			else { die "[ERR]seq fromat: $id\n"; }
+		
+			my $seq = <$fh>; chomp($seq);
+			if ( defined $seq_count{$seq} ) {
+				$seq_count{$seq}++;
+			} else {
+				$seq_count{$seq} = 1;
+			}
+			
+			if ($format eq 'fastq') { <$fh>; <$fh>; }
+			$total_seq_num++;
+		}
+		$fh->close;
+		
+		$length = length($total_seq_num);
+
+		# sort by num for duplicate seq/read
+		my %seq_count_sort;
+		foreach my $sq (sort keys %seq_count) {
+			my $count = $seq_count{$sq};
+			if ($count > 1 ) {
+				if (defined $seq_count_sort{$count}) {
+					$seq_count_sort{$count}.= "\t".$sq;
+				} else {
+					$seq_count_sort{$count} = $sq;
+				}
+				delete $seq_count{$sq};
+			} 
 		}
 
+		# output result
+		my $seq_num = 0;
+		my $out = IO::File->new(">".$output_file) || die $!;
+		# --- output duplicate seq/read
+		foreach my $ct (sort { $b<=>$a } keys %seq_count_sort) { 
+			my @seq = split(/\t/, $seq_count_sort{$ct});
+			foreach my $sq (@seq) {
+				$seq_num++;
+				my $zlen = $length - length($seq_num);
+				my $z = "0"x$zlen;
+				my $seq_id = "sRU".$z.$seq_num;
+				print $out ">$seq_id-$ct\n$sq\n";
+			}
+		}	
 
+		# --- output single seq/read
+		foreach my $sq (sort keys %seq_count) {
+			$seq_num++;
+			my $zlen = $length - length($seq_num);
+			my $z = "0"x$zlen;
+			my $seq_id = "sRU".$z.$seq_num;
+			print $out ">$seq_id-1\n$sq\n";
+		}		
+
+		$out->close;
 	}
-
-	# output the results
-	my $seq_num = 0;
-
-
-
-
 }
 
 =head2
