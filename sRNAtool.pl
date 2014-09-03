@@ -21,15 +21,99 @@ elsif	($tool eq 'lengthd') { lengthd(\%options); }
 elsif	($tool eq 'unique' ) { unique(\%options);  }
 elsif   ($tool eq 'norm' )   { norm(\%options);    }
 elsif   ($tool eq 'normcut') { normcut(\%options); }
+elsif   ($tool eq 'combine') { combine(\%options); }
+elsif	($tool eq 'chkadp')  { chkadp(\%options);  }
 else	{ usage($version); } 
 
 #################################################################
 # kentnf: subroutine						#
 #################################################################
 =head2
+ chkadp -- check adapter using k-mer method
+=cut
+sub chkadp
+{
+	my $options = shift;
+	
+	my $subUsage = qq'
+USAGE: $0 convert [options]
+	-i	inuput file
+
+';
+
+	my $min_len = 15;
+	my $kmer_len = 9;
+	my $read_yeild = 1e+5;
+
+	print $subUsage and exit unless $$options{'i'};
+	my $inFile = $$options{'i'};
+	die "[ERR]File not exist\n" unless -s $inFile;	
+
+	my %kmer_ct;		# key: kmer; value: count;
+	my $kmer_most;		# the most freq kmer
+	my $kmer_most_freq = 0; # the count of most freq kmer
+
+	my $seq_ct = 0; my $format;
+	my $fh = IO::File->new($inFile) || die $!;
+	while(<$fh>)
+	{
+		chomp;
+		my $id = $_;
+		if	($id =~ m/^>/) { $format = 'fasta'; }
+		elsif	($id =~ m/^@/) { $format = 'fastq'; }
+		else 	{ die "[ERR]seq format $id\n"; }
+		my $seq = <$fh>; chomp($seq); $seq = uc($seq);
+		
+		my $k_count = length($seq) - $min_len - $kmer_len + 1;
+		for(my $i=0; $i<$k_count; $i++) 
+		{
+			my $k = substr($seq, $min_len + $i, $kmer_len);
+			if ( defined $kmer_ct{$k} ) 
+			{
+				$kmer_ct{$k}++;
+				if ($kmer_ct{$k} > $kmer_most_freq) 
+				{
+					$kmer_most_freq = $kmer_ct{$k};
+					$kmer_most = $k;
+				}
+			}
+			else 
+			{
+				$kmer_ct{$k} = 1;
+			}
+		}
+
+		if ($format eq 'fastq') { <$fh>; <$fh>; }
+		$seq_ct++;
+		last if $seq_ct == $read_yeild;
+	}
+	$fh->close;
+
+	# process extend kmer most
+	my @base = ("A", "T", "C", "G");
+	print "#kmer\tcount\n$kmer_most\t$kmer_most_freq\n";
+	my $pre_k = $kmer_most;
+	for(my $i=0; $i<$min_len; $i++)
+	{
+		my ($best_kmer, $best_kmer_count);
+		$best_kmer_count = 0;
+		my $subk = substr($pre_k, 0, $kmer_len-1);
+		foreach my $b (@base)
+		{
+			my $k = $b.$subk;
+			if (defined $kmer_ct{$k} && $kmer_ct{$k} > $best_kmer_count) {
+				$best_kmer = $k;
+				$best_kmer_count = $kmer_ct{$k};
+			}
+		}
+		$pre_k = $best_kmer;
+		print "$best_kmer\t$best_kmer_count\n";
+	}	
+}
+
+=head2
  convert -- convert table format (GEO database) to fasta format (default), or fasta format to table format
 =cut
-
 sub convert
 {
 	my $options = shift;
@@ -37,13 +121,16 @@ sub convert
 	my $subUsage = qq'
 USAGE: $0 convert [options]
 	-i	input file 
-	-o	output file
+	-o	output prefix (defaul:sRNAseq)
 	-p	prefix of out seqID (for table convert to fasta)
 	-f	convert table to fasta (default:0) / fasta to table (1)
 
 ';
 
 	print $subUsage and exit unless $$options{'i'}; 
+	my $out_prefix = 'sRNAseq';
+	$out_prefix = $$options{'o'} if $$options{'o'};
+
 
 	my ($inFile, $outFile, $format, $prefix);
 	$inFile = $$options{'i'};
@@ -51,8 +138,12 @@ USAGE: $0 convert [options]
 	$prefix = $$options{'p'} if $$options{'p'};
 	$format = 0;
 	$format = 1 if $$options{'f'};
+
 	my %read; my $num;
 	if ($format) {
+		$outFile = $out_prefix.".tab";
+		die "[ERR]output file $outFile exist\n" if -s $outFile;
+		my $out = IO::File->new(">".$outFile) || die $!;
 		my $in = IO::File->new($inFile) || die $!;
 		while(<$in>)
 		{
@@ -73,11 +164,14 @@ USAGE: $0 convert [options]
 
 		foreach my $r (sort keys %read)
 		{
-			print $r."\t".$read{$r}."\n";
+			print $out $r."\t".$read{$r}."\n";
 		}
-
+		$out->close;
 
 	} else {
+		$outFile = $out_prefix.".fasta";
+		die "[ERR]output file $outFile exist\n" if -s $outFile;
+		my $out = IO::File->new(">".$outFile) || die $!;
 		my $in = IO::File->new($inFile) || die $!;
 		while(<$in>)
 		{
@@ -96,8 +190,9 @@ USAGE: $0 convert [options]
 		{
         		$num++;
 			my $count = $read{$r};
-			print ">".$prefix."A".$num."-".$count."\n$r\n";
+			print $out ">".$prefix."A".$num."-".$count."\n$r\n";
 		}
+		$out->close;
 	}
 	# foreach my $o (sort keys %$options) { print "$o\t$$options{$o}\n"; }
 }
@@ -532,6 +627,78 @@ USAGE $0 normcut [options]
 }
 
 =head2
+ combine -- combine sRNA replicate to one sample
+=cut
+sub combine
+{
+        my $options = shift;
+
+        my $subUsage = qq'
+USAGE $0 combine [options]
+        -i      replicate1,replicate2,replicate3,...,repliateN
+        -o      output_prefix (defaule: sRcombine)
+
+* the input replicate should be uniq sRNA with fasta format
+* the output file will be sRcombine.fasta, and sRNA ID start with sRcombine.
+
+';
+
+        print $subUsage and exit unless $$options{'i'};
+	
+	# check input files;
+	my @inFiles = split(/,/, $$options{'i'});
+	foreach my $f (@inFiles) {
+		die "[ERR]File $f is not exist\n" unless -s $f;
+	}
+
+	# output file
+	my $out_prefix = 'sRcombine';
+	$out_prefix = $$options{'o'} if $$options{'o'};
+	my $output_file = $out_prefix.".fasta";
+	die "[ERR]output file $output_file exist\n" if -s $output_file;
+
+	# put sRNA count to hash
+	my %sRNA_count;
+
+	foreach my $f (@inFiles) 
+	{
+		my $fh = IO::File->new($f) || die $!;
+		while(<$fh>)
+		{
+			chomp;
+			my $id = $_; 
+			die "[ERR]seq id $id in file $f\n" unless $id =~ m/^>/;
+			my @a = split(/-/, $id);
+			my $ct = $a[scalar(@a)-1];
+			die "[ERR]seq num $ct\n" if $ct < 1;
+			my $seq = <$fh>; chomp($seq);
+
+			if (defined $sRNA_count{$seq}) {
+				$sRNA_count{$seq} = $sRNA_count{$seq} + $ct;
+			} else {
+				$sRNA_count{$seq} = $ct;
+			}
+		}
+		$fh->close;
+	}
+
+	my $length = length(scalar(keys(%sRNA_count)));
+
+	my $out = IO::File->new(">".$output_file) || die $!;
+	my $s_num = 0;
+	foreach my $sRNA (sort keys %sRNA_count)
+	{
+		my $ct = $sRNA_count{$sRNA};
+		$s_num++;
+		my $zlen = $length - length($s_num);
+		my $z = "0"x$zlen;
+		my $sid = $out_prefix.$z.$s_num."-".$ct;
+		print $out ">$sid\n$sRNA\n";
+	}
+	$out->close;
+}
+
+=head2
  usage -- print usage information
 =cut
 sub usage
@@ -543,13 +710,15 @@ Version: $version
 
 USAGE: $0 <command> [options] 
 Command: 
-	rmadpter	remove adapter sequence
+	chkadp		check adapter sequence (kmer method)
+	rmadp		remove adapter sequence
 	convert		convert between table format and fastq/fasta format
 	unique		convert between unique format and clean format
 	norm	     	normalization (RPM)
 	cutnorm		normalization cutoff	
 	lengthd		length distribution of sRNA	
-
+	combine		combine sRNA replicates
+	
 ';
 	exit;
 }
