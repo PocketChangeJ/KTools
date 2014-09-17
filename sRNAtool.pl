@@ -14,7 +14,7 @@ if (@ARGV < 1) { usage($version);}
 my $tool = shift @ARGV;
 
 my %options;
-getopts('i:o:p:fuh', \%options);
+getopts('i:o:p:s:fuh', \%options);
 
 if	($tool eq 'convert') { convert(\%options); }
 elsif	($tool eq 'lengthd') { lengthd(\%options); }
@@ -23,11 +23,69 @@ elsif   ($tool eq 'norm' )   { norm(\%options);    }
 elsif   ($tool eq 'normcut') { normcut(\%options); }
 elsif   ($tool eq 'combine') { combine(\%options); }
 elsif	($tool eq 'chkadp')  { chkadp(\%options);  }
+elsif	($tool eq 'rmadp3')  { rmadp3(\%options);  }
+elsif   ($tool eq 'rmadp5')  { rmadp5(\%options);  }
+elsif	($tool eq 'range')   { range(\%options);   }
 else	{ usage($version); } 
 
 #################################################################
 # kentnf: subroutine						#
 #################################################################
+=head2
+ rmadp5 -- remove 5p adapter 
+=cut
+sub rmadp5
+{
+	my $options = shift;
+	
+	my $subUsage = qq'
+USAGE: $0 rmadp5 [options]
+	-i	input file
+	-s	adapter sequence
+	-l	adapter length
+	-d	distance between adater and sRNA 
+	-o	output file[default: input_file.rm5]
+
+';
+	my ($adp_length, $distance, $outFile);
+	$adp_length = 9;
+	$distance = 0;
+
+	print $subUsage and exit unless $$options{'i'};
+	print $subUsage and exit unless $$options{'s'};
+	my $inFile  = $$options{'i'};
+	my $adapter = $$options{'s'};
+	$outFile = $inFile.".rm5";
+	$adp_length = $$options{'l'} if defined $$options{'l'};
+	$distance = $$options{'d'} if defined $$options{'d'};
+	$outFile = $$options{'o'} if defined $$options{'o'};
+
+	die "[ERR]in file not exist\n" unless -s $inFile;
+	die "[ERR]out file exist\n" if -s $outFile;
+	die "[ERR]short adapter\n" if ( length ($adapter) < $adp_length );
+
+	#my $subadp = substr($adapter, , );
+
+
+	my $format;
+	my $out = IO::File->new($outFile) || die $!;
+	my $fh = IO::File->new($inFile) || die $!;
+	while(<$fh>)
+	{
+		chomp;
+		my $id = $_;
+		if      ($id =~ m/^>/) { $format = 'fasta'; }
+		elsif   ($id =~ m/^@/) { $format = 'fastq'; }
+		else    { die "[ERR]seq format $id\n"; }
+		my $seq = <$fh>; chomp($seq); $seq = uc($seq);
+	
+			
+	}
+	$fh->close;
+	$out->close;
+
+}
+
 =head2
  chkadp -- check adapter using k-mer method
 =cut
@@ -36,7 +94,7 @@ sub chkadp
 	my $options = shift;
 	
 	my $subUsage = qq'
-USAGE: $0 convert [options]
+USAGE: $0 chkadp [options]
 	-i	inuput file
 
 ';
@@ -112,6 +170,25 @@ USAGE: $0 convert [options]
 }
 
 =head2
+ rmadp -- remove adapter from sRNA sequence
+=cut
+sub rmadp
+{
+	my $options = shift;
+
+	my $subUsage = qq'
+USAGE: $0 rmadp [options]
+        -i      input file 
+        -a      adapter sequence
+        -l 	length 
+        -f      convert table to fasta (default:0) / fasta to table (1)
+<not finished>
+
+';
+	
+}
+
+=head2
  convert -- convert table format (GEO database) to fasta format (default), or fasta format to table format
 =cut
 sub convert
@@ -151,7 +228,7 @@ USAGE: $0 convert [options]
 			my $id = $_;
 			my @a = split(/-/, $id);
 			die "[ERR]sRNA ID: $id\n" unless @a == 2;
-			die "[ERR]sRNA num: $a[1]" unless $a[2] > 0;
+			die "[ERR]sRNA num: $a[1]\n" unless $a[1] > 0;
 			my $rd = <$in>; chomp($rd);
 			if ( defined $read{$a[0]} ) {
 				$read{$rd} = $read{$rd} + $a[1];
@@ -704,14 +781,14 @@ USAGE $0 combine [options]
 sub usage
 {
 	print qq'
-
 Program: sRNAtools (Tools for sRNA analysis)
 Version: $version
 
 USAGE: $0 <command> [options] 
 Command: 
 	chkadp		check adapter sequence (kmer method)
-	rmadp		remove adapter sequence
+	rmadp3		remove 3p adapter sequence
+	rmadp5		remove 5p adapter sequence
 	convert		convert between table format and fastq/fasta format
 	unique		convert between unique format and clean format
 	norm	     	normalization (RPM)
