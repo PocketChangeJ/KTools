@@ -22,6 +22,7 @@ perl $0
 	-m filter by max hits ( <=6 )
 	-n filter un-aligned reads
 	-v filter by mismatch (1-3)
+	-c count reads number for sRNA align
 	-u filter multiple hits (see description)
 	
 * description of filter -u
@@ -34,6 +35,7 @@ Rules   1) if reads has uniq hits, keep it.
 
 my ($help, $sam_file_in, $sam_file_out, $add_byexp, $filter_byreadlength, $filter_multihits, $filter_unalignedread, $filter_editDistanceCutoff);
 my $filter_uniq;
+my $count_read;
 
 GetOptions(
 	"h"	=> \$help,
@@ -46,6 +48,7 @@ GetOptions(
 	"n"	=> \$filter_unalignedread,
 	"v=i"	=> \$filter_editDistanceCutoff,
 	"u"	=> \$filter_uniq,
+	"c"	=> \$count_read,
 );
 
 die $usage if $help;
@@ -66,7 +69,7 @@ else
 # checking filter type						#
 #################################################################
 my $type_num = 0;
-my @types = ($add_byexp, $filter_byreadlength, $filter_multihits, $filter_unalignedread, $filter_uniq);
+my @types = ($add_byexp, $filter_byreadlength, $filter_multihits, $filter_unalignedread, $filter_uniq, $count_read);
 foreach my $type (@types) {
 	if ($type) { $type_num++; }
 }
@@ -87,11 +90,44 @@ if (defined $filter_multihits)		{ filter_MultiHits($sam_file_in, $sam_file_out, 
 if (defined $filter_unalignedread)	{ filter_UnAlignedRead($sam_file_in, $sam_file_out, \%outflag); }
 if (defined $filter_editDistanceCutoff)	{ filter_EditDistanceCutoff($sam_file_in, $sam_file_out, $filter_editDistanceCutoff); }
 if (defined $filter_uniq)		{ filter_uniq($sam_file_in, $sam_file_out); }
-
+if (defined $count_read)		{ count_read($sam_file_in); }
 
 #################################################################
 # kentnf: subroutine						#
 #################################################################
+
+=head count read
+  count number of aligned uniq sRNA reads
+=cut
+sub count_read
+{
+	my $sam_file_in = shift;
+
+
+	my %uniq_read;
+	my $seq_num = 0;
+	
+	my $in = IO::File->new($sam_file_in) || die $!;
+	while(<$in>)
+	{
+		chomp;
+		next if $_ =~ m/^@/;
+		my @a = split(/\t/, $_);
+		
+		unless ( defined $uniq_read{$a[0]} )
+		{
+			my @b = split(/\t/, $a[0]);
+			my $num = pop @b;
+			die "[ERR]seq num for $a[0]\n" if $num < 1;
+			$seq_num = $seq_num + $num;
+			$uniq_read{$a[0]} = 1;
+		}
+	}
+	$in->close;
+
+	print "File:$sam_file_in\tSeqNum:$seq_num\n";
+}
+
 
 =head1 add_ByExp
 
