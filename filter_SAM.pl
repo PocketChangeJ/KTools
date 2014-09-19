@@ -116,7 +116,7 @@ sub count_read
 		
 		unless ( defined $uniq_read{$a[0]} )
 		{
-			my @b = split(/\t/, $a[0]);
+			my @b = split(/-/, $a[0]);
 			my $num = pop @b;
 			die "[ERR]seq num for $a[0]\n" if $num < 1;
 			$seq_num = $seq_num + $num;

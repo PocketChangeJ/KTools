@@ -14,7 +14,7 @@ if (@ARGV < 1) { usage($version);}
 my $tool = shift @ARGV;
 
 my %options;
-getopts('i:o:p:s:fuh', \%options);
+getopts('i:o:p:s:c:fuh', \%options);
 
 if	($tool eq 'convert') { convert(\%options); }
 elsif	($tool eq 'lengthd') { lengthd(\%options); }
@@ -792,7 +792,7 @@ Command:
 	convert		convert between table format and fastq/fasta format
 	unique		convert between unique format and clean format
 	norm	     	normalization (RPM)
-	cutnorm		normalization cutoff	
+	normcut		normalization cutoff	
 	lengthd		length distribution of sRNA	
 	combine		combine sRNA replicates
 	
