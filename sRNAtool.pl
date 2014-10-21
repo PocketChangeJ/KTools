@@ -2,6 +2,13 @@
 
 =head1
  sRNAtool -- tools for sRNA data preparation
+ plan -- add Q20 Function, range function
+ clip from 5' and 3' function by the end of this Sept 2014
+ insert miRNA identification pipeline, debug, 
+ insert sPARTA to it, debug
+ insert ta-si analysis to it debug
+ by the end of 2014, check if there is any pipeline could be used for improve 24nt sRNA analysis
+ write document on reddocs
 =cut
 
 use strict;
@@ -32,7 +39,7 @@ else	{ usage($version); }
 # kentnf: subroutine						#
 #################################################################
 =head2
- rmadp5 -- remove 5p adapter 
+ rmadp3 -- remove 3p adapter 
 =cut
 sub rmadp5
 {
@@ -44,7 +51,7 @@ USAGE: $0 rmadp5 [options]
 	-s	adapter sequence
 	-l	adapter length
 	-d	distance between adater and sRNA 
-	-o	output file[default: input_file.rm5]
+	-o	output file[default: input_file.ra3]
 
 ';
 	my ($adp_length, $distance, $outFile);
@@ -55,7 +62,7 @@ USAGE: $0 rmadp5 [options]
 	print $subUsage and exit unless $$options{'s'};
 	my $inFile  = $$options{'i'};
 	my $adapter = $$options{'s'};
-	$outFile = $inFile.".rm5";
+	$outFile = $inFile.".ra3";
 	$adp_length = $$options{'l'} if defined $$options{'l'};
 	$distance = $$options{'d'} if defined $$options{'d'};
 	$outFile = $$options{'o'} if defined $$options{'o'};
@@ -83,7 +90,6 @@ USAGE: $0 rmadp5 [options]
 	}
 	$fh->close;
 	$out->close;
-
 }
 
 =head2
