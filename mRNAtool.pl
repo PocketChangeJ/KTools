@@ -594,13 +594,141 @@ sub load_feature_bed
 =cut
 sub rnaseq_unmap
 {
+	my ($options, $file) = @_;
 	
 	my $usage = qq'
-
+USAGE: $0 -t unmap [options] bam,read ... | bam,read_1,read2 ... 
+	
+	-u	[1-3] level for paired end mapped
+		1. only paired aligned
+		2. paired align + single align
+		3. paired align + single align(paired)
 ';
 
+	my $u = 2;
+	$u = $$options{'u'} if (defined $$options{'u'} && $$options{'u'} > 0 && $$options{'u'} < 4);
 
+	# check input files
+	my @new_file;
+	foreach my $set (@$file) {
+		my @a = split(/,/, $set);
+		print "[ERR]no bam file: $set\n" and exit unless ( $a[0] =~ m/\.bam$/ );
+		print "[ERR]no bam file: $set\n" and exit unless -s $a[0];
+		print "[ERR]no read1 file: $set\n" and exit unless -s $a[1];
+		push(@new_file, "$a[0],$a[1]");
+	}
 
+	# main: get unmapped reads
+	foreach my $set (@$file) 
+	{
+		my @a = split(/,/, $set);
+		my $bam = $a[0];
+		my $sam = $bam; $sam =~ s/\.bam$/\.sam/;
+		run_cmd("samtools view $bam > $sam");
+
+		# load reads flag to hash
+		my %read_flag;
+		my $fh1 = IO::File->new($sam) || die $!;
+		while(<$fh1>)
+		{
+			chomp;
+			next if $_ =~ m/^@/;
+			my @a = split(/\t/, $_);
+			if (defined $read_flag{$a[0]}) {
+				my @f = split(/\t/, $read_flag{$a[0]});
+				my %flg;
+				foreach my $f (@f) { $flg{$f} = 1; }
+				unless ( defined $flg{$a[1]} ) {
+					$read_flag{$a[0]}.="\t".$a[1];
+				}
+			} else { 
+				$read_flag{$a[0]} = $a[1]; 
+			}
+		}
+		$fh1->close;
+
+		if (scalar(@a) == 2)
+		{
+			my $unmap_file = $a[1].".unmap";
+			my $out = IO::File->new(">".$unmap_file) || die $!;
+			my $fh2 = IO::File->new($a[1]) || die $!;
+			while(<$fh2>)
+			{
+				my $id = $_; chomp($id);
+				if 	($id =~ m/^>/) { $format = 'fasta'; $id =~ s/^>//; }
+				elsif	($id =~ m/^@/) { $format = 'fastq'; $id =~ s/^@//; }
+				else	{ die "[ERR]seq format $id\n"; }
+				my $tid = $id; $tid =~ s/ .*//;
+				my $seq = <$fh2>; chomp($seq);
+				if ($format eq 'fastq') { <$fh2>; <$fh2>; }
+			
+				if (defined $read_flag{$tid}) {
+					my @f = split(/\t/, $read_flag{$tid});
+					foreach my $flg (@f) 
+					{
+						my $flg_stat = parse_flag($flg);
+						if ($flg_stat =~ m/unmapped/) { print $out ">$id\n$seq\n"; }
+					}
+				} else {
+					print $out ">$id\n$seq\n";
+				}
+			}
+			$fh2->close;
+			$out->close;
+		}
+		elsif (scalar(@a) == 3)
+		{
+			# parse read flag according parameter U
+			my %select_read;
+			
+			foreach my $r (sort keys %read_flag) 
+			{
+				my @fn = split(/\t/, $read_flag{$r});
+				
+				my $paired = 0;	# left, right, pair
+				my $single = 0;
+				foreach my $flag_num (@fn) 
+				{
+					my @flag_stat = parse_flag($flag_num);
+					my $flag_stat = join("#", @flag_stat);
+					if ($flag_stat =~ m/paired/) {
+						if ($flag_stat =~ m/unmapped/) {
+							$single = 'left' if $flag_stat =~ m/left/;
+							$single = 'right' if $flag_stat =~ m/right/;
+						} else {
+							$paired = 1;
+						}
+					}
+				}	
+			}
+		}
+		else
+		{
+			print "[WARN]set has error: $set\n";
+		}	
+	}
+}
+
+=head2
+ parse_flag: parse sam flag
+=cut
+sub parse_flag
+{
+	my $flag_num = shift;
+	my @flag_stat = '';
+	if ($flag_num & 0x1)    { push(@flag_stat, "Paired"); }
+	if ($flag_num & 0x2)    { push(@flag_stat, "GoodAligned"); } 	
+	if ($flag_num & 0x4)    { push(@flag_stat, "UnmappedSeg"); }
+	if ($flag_num & 0x8)    { push(@flag_stat, "Unmapped 2ndSeg"); }
+	if ($flag_num & 0x10)   { push(@flag_stat, "1stSEQ=RC"); }
+	if ($flag_num & 0x20)   { push(@flag_stat, "2ndSEQ=RC"); }
+	if ($flag_num & 0x40)   { push(@flag_stat, "Left"); }
+	if ($flag_num & 0x80)   { push(@flag_stat, "Right"); }
+	if ($flag_num & 0x100)  { push(@flag_stat, "Mhit"); }
+	if ($flag_num & 0x200)  { push(@flag_stat, "lowQC"); }
+	if ($flag_num & 0x400)  { push(@flag_stat, "Dup"); }
+	if ($flag_num & 0x800)  { push(@flag_stat, "supplementary alignment"); } 
+	return @flag_stat;
 }
 
 =head2
