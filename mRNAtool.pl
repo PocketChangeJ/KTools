@@ -31,6 +31,7 @@ if (defined $options{'l'} && $options{'l'} ne "fr-firststrand" && $options{'l'} 
 
 if	($options{'t'} eq 'align')	{ rnaseq_align(\%options, \@ARGV); }	# parse multi dataset
 elsif	($options{'t'} eq 'count')	{ rnaseq_count(\%options, \@ARGV); }	# parse multi dataset
+elsif	($options{'t'} eq 'norm')	{ rnaseq_norm(\%options, \@ARGV);  }	# parse single dataset
 elsif	($options{'t'} eq 'corre')	{ rnaseq_corre(\%options, \@ARGV); }	# parse single dataset
 elsif	($options{'t'} eq 'unmap')	{ rnaseq_unmap(\%options, \@ARGV); }	# parse single dataset
 elsif	($options{'t'} eq 'pipeline')	{ pipeline(); }				# print pipelines
@@ -135,7 +136,7 @@ USAGE: $0 [options] input1.fq input2.fq ...... | input1_r1_fq,input1_r2.fq input
 
 		# run tophat
 		my $cmd_tophat = "$tophat_bin -o $output --library-type $$options{'l'} -p $cpu --segment-mismatches $mismatch --read-mismatches $mismatch --read-edit-dist $mismatch --read-gap-length $mismatch --max-multihits 20 --segment-length 25 $$options{'d'} $input";
-		#run_cmd($cmd_tophat);
+		run_cmd($cmd_tophat);
 		
 		# parse report file
 		my $report_tophat_file = $output."/align_summary.txt";
@@ -411,6 +412,40 @@ USAGE: $0 [options] input1.bam input2.bam ......
 }
 
 =head2
+ rnaseq_norm: normalization of expression file
+=cut
+sub rnaseq_norm
+{
+	my ($options, $file) = @_;
+	my $usage = qq'
+USAGE: $0 -t norm -f feature.bed -u report_tophat.txt project_raw_count.txt > project_rpkm.txt
+
+';
+	# check input file
+	print "[ERR]no exp file\n$usage" and exit unless defined $$file[0];
+	my $exp_file = $$file[0];
+	print "[ERR]no exp file $exp_file\n" and exit unless -s $exp_file;
+	print "[ERR]no feature file\n$usage" and exit unless defined $$options{'f'};
+	print "[ERR]no tophat report file\n$usage" and exit unless defined $$options{'u'};
+
+	# check libsize and sample name
+	my %sample_libsize;
+	my $fh1 = IO::File->new($$optins{'u'}) || die $!;
+	<$fh1>;	# skip the title
+	while(<$fh1>)
+	{
+		chomp;
+		my @a = split(/\t/, $_);
+		$sample_libsize{$a[0]} = $a[2];
+	}
+	$fh1->close;
+
+	# load feature length from bed file
+	my %feature_length;
+		
+}
+
+=head2
  rnaseq_corre: correlation analysis for rnaseq dataset
 =cut
 sub rnaseq_corre
@@ -581,6 +616,7 @@ USAGE: $0 -t [tool] [options] input file
 
 	align	align read to reference using tophat
 	count	count aligned reads for each feature
+	norm	normalization of expression file
 	corre	generate correlation tables
 	unmap	extract unampped reads (tophat could do it)
 	denovo	denovo assembly using Trinity
