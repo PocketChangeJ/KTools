@@ -110,8 +110,17 @@ USAGE: $0 [options] input1.fq input2.fq ...... | input1_r1_fq,input1_r2.fq input
 	}
 	die "[ERR]no input files\n" if (scalar(@input_files) == 0);
 	
-	# main
-	my $report_tophat = "#sample\ttotal\tmapped\t%mapped\tmhit\t%mhit\n";
+	# main 
+	# 1. create header of report file
+	my $report_tophat = "";
+	if ($$options{'s'} =~ m/^S/) {
+		$report_tophat.="#sample\ttotal\tmapped\t%mapped\tmhit\t%mhit\n";
+	} else {
+		$report_tophat.="#sample\ttotal\tmapped\t%mapped\tmhit\t%mhit";
+		$report_tophat.="\tLeftMap\t%LeftMap\tLeftMhit\t%LeftMhit\tRightMap\t%RightMap\tRightMhit\t%RightMhit\n";
+	}
+
+	# 2. tophat mapping
 	foreach my $f (@input_files) 
 	{
 		my ($input, $output);
@@ -125,40 +134,48 @@ USAGE: $0 [options] input1.fq input2.fq ...... | input1_r1_fq,input1_r2.fq input
 		}
 
 		# run tophat
-		my $cmd_tophat = "$tophat_bin -o $output --library-type $$options{'l'} -p $cpu --segment-mismatches $mismatch --read-mismatches $mismatch --max-multihits 20 --segment-length 25 $$options{'d'} $input";
-		run_cmd($cmd_tophat);
+		my $cmd_tophat = "$tophat_bin -o $output --library-type $$options{'l'} -p $cpu --segment-mismatches $mismatch --read-mismatches $mismatch --read-edit-dist $mismatch --read-gap-length $mismatch --max-multihits 20 --segment-length 25 $$options{'d'} $input";
+		#run_cmd($cmd_tophat);
 		
-		# for report file
-		my ($total, $mapped, $mhit);
+		# parse report file
 		my $report_tophat_file = $output."/align_summary.txt";
-		my $fh = IO::File->new($report_tophat_file) || die $!;
-		while(<$fh>)
+		my $rinfo = `cat $report_tophat_file`;
+		chomp($rinfo); my @r = split(/\n/, $rinfo);	
+		my ($total, $mapped, $mhit, $lefttotal, $leftmap, $leftmhit, $righttotal, $rightmap, $rightmhit);
+		if ($f =~ m/,/)
 		{
-			chomp;
-			if ( $_ =~ m/Input\s+:\s+(\d+)/ ) { $total = $1; }
-			if ( $_ =~ m/Mapped\s+:\s+(\d+)/ ) { $mapped = $1;}
-			if ( $_ =~ m/of these:\s+(\d+)/ )  { $mhit = $1; }
+			if ( $r[1] =~ m/Input\s+:\s+(\d+)/ )	{ $lefttotal	= $1; }
+			if ( $r[2] =~ m/Mapped\s+:\s+(\d+)/ )	{ $leftmap	= $1; }
+			if ( $r[3] =~ m/of these:\s+(\d+)/ )	{ $leftmhit	= $1; }
+			if ( $r[5] =~ m/Input\s+:\s+(\d+)/ )	{ $righttotal	= $1; }
+			if ( $r[6] =~ m/Mapped\s+:\s+(\d+)/ )	{ $rightmap	= $1; }
+			if ( $r[7] =~ m/of these:\s+(\d+)/ )	{ $rightmhit	= $1; }
+			if ( $r[10] =~ m/Aligned pairs:\s+(\d+)/ ) { $mapped = $1; }
+			if ( $r[11] =~ m/of these:\s+(\d+)/ )	{ $mhit 	= $1; }
+			print "[WARN]Left ($lefttotal) is not same as right ($righttotal)\n" if $lefttotal ne $righttotal;
+			$total = $lefttotal;
+			$report_tophat.="$f\t$total\t$mapped\t".sprintf("%.2f", ($mapped/$total)*100);
+			$report_tophat.="\t$mhit\t".sprintf("%.2f", ($mhit/$mapped)*100);
+			$report_tophat.="\t$leftmap\t".sprintf("%.2f", ($leftmap/$lefttotal)*100);
+			$report_tophat.="\t$leftmhit\t".sprintf("%.2f", ($leftmhit/$leftmap)*100);
+			$report_tophat.="\t$rightmap\t".sprintf("%.2f", ($rightmap/$righttotal)*100);
+			$report_tophat.="\t$rightmhit\t".sprintf("%.2f", ($rightmhit/$rightmap)*100)."\n";
 		}
-		$fh->close;
-		$report_tophat.= "$f\t$total\t$mapped\t".sprintf("%.2f", ($mapped/$total)*100)."\t$mhit\t".sprintf("%.2f", ($mhit/$mapped)*100)."\n";
-	}	
-=head
-Left reads:
-          Input     :    250000
-           Mapped   :    232191 (92.9% of input)
-            of these:      6742 ( 2.9%) have multiple alignments (31 have >20)
-Right reads:
-          Input     :    250000
-           Mapped   :    233088 (93.2% of input)
-            of these:      6546 ( 2.8%) have multiple alignments (31 have >20)
-93.1% overall read mapping rate.
+		else
+		{
+			if ( $r[1] =~ m/Input\s+:\s+(\d+)/ )	{ $total = $1; }
+			if ( $r[2] =~ m/Mapped\s+:\s+(\d+)/ )	{ $mapped = $1;}
+			if ( $r[3] =~ m/of these:\s+(\d+)/ )	{ $mhit = $1; }
+			$report_tophat.="$f\t$total\t$mapped\t".sprintf("%.2f", ($mapped/$total)*100);
+			$report_tophat.="\t$mhit\t".sprintf("%.2f", ($mhit/$mapped)*100)."\n";
+		}
+	}
 
-Aligned pairs:    219004
-     of these:      6336 ( 2.9%) have multiple alignments
-                    1477 ( 0.7%) are discordant alignments
-87.0% concordant pair alignment rate.
-=cut
-	print $report_tophat;
+	# output report information to file
+	my $tophat_report_file = "report_tophat.txt";
+	my $out = IO::File->new(">".$tophat_report_file) || die $!;
+	print $out $report_tophat;
+	$out->close;
 }
 
 =head2
