@@ -14,7 +14,7 @@ my $version = 0.1;
 my $debug = 0;
 
 my %options;
-getopts('t:s:l:e:d:p:n:f:h', \%options);
+getopts('t:s:l:e:d:p:n:f:u:h', \%options);
 
 unless (defined $options{'t'} ) { usage($version); }
 
@@ -422,7 +422,7 @@ USAGE: $0 -t norm -f feature.bed -u report_tophat.txt project_raw_count.txt > pr
 
 ';
 	# check input file
-	print "[ERR]no exp file\n$usage" and exit unless defined $$file[0];
+	print $usage and exit unless defined $$file[0];
 	my $exp_file = $$file[0];
 	print "[ERR]no exp file $exp_file\n" and exit unless -s $exp_file;
 	print "[ERR]no feature file\n$usage" and exit unless defined $$options{'f'};
@@ -430,7 +430,7 @@ USAGE: $0 -t norm -f feature.bed -u report_tophat.txt project_raw_count.txt > pr
 
 	# check libsize and sample name
 	my %sample_libsize;
-	my $fh1 = IO::File->new($$optins{'u'}) || die $!;
+	my $fh1 = IO::File->new($$options{'u'}) || die $!;
 	<$fh1>;	# skip the title
 	while(<$fh1>)
 	{
@@ -440,9 +440,51 @@ USAGE: $0 -t norm -f feature.bed -u report_tophat.txt project_raw_count.txt > pr
 	}
 	$fh1->close;
 
+	my $sname = `head -n 1 $exp_file`;
+	chomp($sname);
+	my @s = split(/\t/, $sname); shift @s;
+	foreach my $s (@s) {
+		print "[ERR]no libsize for sample: $s\n" and exit unless defined $sample_libsize{$s};
+	}
+
 	# load feature length from bed file
 	my %feature_length;
-		
+	my $fh2 = IO::File->new($$options{'f'}) || die $!;
+	while(<$fh2>)
+	{
+		chomp;
+		next if $_ =~ m/^#/;
+		# SL2.40ch00	16437	18189	Solyc00g005000.2.1	1693	+
+		my @a = split(/\t/, $_);
+		$feature_length{$a[3]} = $a[4];
+	}
+	$fh2->close;
+
+	# normlization using RPKM/FPKM method
+	my $fh3 = IO::File->new($exp_file) || die $!;
+	my $title = <$fh3>; chomp($title);
+	print $title."\n";
+	my @title = split(/\t/, $title);
+	while(<$fh3>)
+	{
+		chomp;
+		next if $_ =~ m/^#/;
+		my @a = split(/\t/, $_);
+		print "[ERR]no feature length $a[0]\n" and exit unless defined $feature_length{$a[0]};
+		my $length = $feature_length{$a[0]};
+		my $output = $a[0];
+
+		for(my $i=1; $i<@a; $i++) 
+		{
+			print "[ERR]no libsize for sample $title[$i]\n" and exit unless defined $sample_libsize{$title[$i]};
+			my $lib_size = $sample_libsize{$title[$i]};
+			my $rpkm = ($a[$i] * 1000 * 1000000) / ($length * $lib_size);
+			$rpkm = sprintf("%.2f", $rpkm);
+			$output.="\t".$rpkm;
+		}
+
+		print $output."\n";
+	}
 }
 
 =head2
