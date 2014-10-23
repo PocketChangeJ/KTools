@@ -654,7 +654,7 @@ USAGE: $0 -t unmap [options] bam,read ... | bam,read_1,read2 ...
 			my $fh2 = IO::File->new($a[1]) || die $!;
 			while(<$fh2>)
 			{
-				my $id = $_; chomp($id);
+				my $id = $_; chomp($id); my $format;
 				if 	($id =~ m/^>/) { $format = 'fasta'; $id =~ s/^>//; }
 				elsif	($id =~ m/^@/) { $format = 'fastq'; $id =~ s/^@//; }
 				else	{ die "[ERR]seq format $id\n"; }
