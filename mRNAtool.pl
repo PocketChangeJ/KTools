@@ -30,6 +30,7 @@ if (defined $options{'l'} && $options{'l'} ne "fr-firststrand" && $options{'l'} 
 }
 
 if	($options{'t'} eq 'align')	{ rnaseq_align(\%options, \@ARGV); }	# parse multi dataset
+elsif	($options{'t'} eq 'tport')	{ rnaseq_tport(\%options, \@ARGV); }	# parse multi dataset
 elsif	($options{'t'} eq 'count')	{ rnaseq_count(\%options, \@ARGV); }	# parse multi dataset
 elsif	($options{'t'} eq 'norm')	{ rnaseq_norm(\%options, \@ARGV);  }	# parse single dataset
 elsif	($options{'t'} eq 'corre')	{ rnaseq_corre(\%options, \@ARGV); }	# parse single dataset
@@ -177,6 +178,83 @@ USAGE: $0 [options] input1.fq input2.fq ...... | input1_r1_fq,input1_r2.fq input
 	my $out = IO::File->new(">".$tophat_report_file) || die $!;
 	print $out $report_tophat;
 	$out->close;
+}
+
+=head2
+ rnaseq_tport: parse tophat report file to generate result
+=cut
+sub rnaseq_tport
+{
+	my ($options, $files) = @_;
+	my $usage = qq'
+USAGE: $0 align_summary1.txt align_summary2.txt ... align_summary3.txt > report_tophat.txt
+
+';
+	print $usage and exit if scalar(@$files) == 0;
+
+	# checking input files	
+	foreach my $f (@$files) {
+		print "[ERR]no file $f\n" and exit unless -s $f;
+	}
+
+	# parse report file
+	my $report_tophat;
+	my $report_line_num = 0;
+	foreach my $f (@$files) {
+		my $rinfo = `cat $f`;
+		chomp($rinfo);
+		my @r = split(/\n/, $rinfo);
+		my ($total, $mapped, $mhit, $lefttotal, $leftmap, $leftmhit, $righttotal, $rightmap, $rightmhit);
+
+		if (scalar @r == 14)
+		{
+			if ( $r[1] =~ m/Input\s+:\s+(\d+)/ )    { $lefttotal    = $1; }
+			if ( $r[2] =~ m/Mapped\s+:\s+(\d+)/ )   { $leftmap      = $1; }
+			if ( $r[3] =~ m/of these:\s+(\d+)/ )    { $leftmhit     = $1; }
+			if ( $r[5] =~ m/Input\s+:\s+(\d+)/ )    { $righttotal   = $1; }
+			if ( $r[6] =~ m/Mapped\s+:\s+(\d+)/ )   { $rightmap     = $1; }
+			if ( $r[7] =~ m/of these:\s+(\d+)/ )    { $rightmhit    = $1; }
+			if ( $r[10] =~ m/Aligned pairs:\s+(\d+)/ ) { $mapped = $1; }
+			if ( $r[11] =~ m/of these:\s+(\d+)/ )   { $mhit         = $1; }
+			print "[WARN]Left ($lefttotal) is not same as right ($righttotal)\n" if $lefttotal ne $righttotal;
+			$total = $lefttotal;
+			$report_tophat.="$f\t$total\t$mapped\t".sprintf("%.2f", ($mapped/$total)*100);
+			$report_tophat.="\t$mhit\t".sprintf("%.2f", ($mhit/$mapped)*100);
+			$report_tophat.="\t$leftmap\t".sprintf("%.2f", ($leftmap/$lefttotal)*100);
+			$report_tophat.="\t$leftmhit\t".sprintf("%.2f", ($leftmhit/$leftmap)*100);
+			$report_tophat.="\t$rightmap\t".sprintf("%.2f", ($rightmap/$righttotal)*100);
+			$report_tophat.="\t$rightmhit\t".sprintf("%.2f", ($rightmhit/$rightmap)*100)."\n";
+			$report_line_num = 14 if scalar(@r) > $report_line_num;
+		}
+		elsif (scalar @r == 5)
+		{
+			if ( $r[1] =~ m/Input\s+:\s+(\d+)/ )    { $total = $1; }
+			if ( $r[2] =~ m/Mapped\s+:\s+(\d+)/ )   { $mapped = $1;}
+			if ( $r[3] =~ m/of these:\s+(\d+)/ )    { $mhit = $1; }
+			$report_tophat.="$f\t$total\t$mapped\t".sprintf("%.2f", ($mapped/$total)*100);
+			$report_tophat.="\t$mhit\t".sprintf("%.2f", ($mhit/$mapped)*100)."\n";
+			$report_line_num = 5 if scalar(@r) > $report_line_num;
+                }
+		else
+		{
+			print "[WARN]erro report format $f\n";
+		}
+	}
+
+	my $report_head = '';
+	if ($report_line_num == 14) {
+		$report_head.="#sample\ttotal\tmapped\t%mapped\tmhit\t%mhit";
+                $report_head.="\tLeftMap\t%LeftMap\tLeftMhit\t%LeftMhit\tRightMap\t%RightMap\tRightMhit\t%RightMhit\n";
+	} else {
+		$report_head.="#sample\ttotal\tmapped\t%mapped\tmhit\t%mhit\n";
+	}
+
+	$report_tophat = $report_head.$report_tophat;
+
+	my $tophat_report_file = "report_tophat.txt";
+        my $out = IO::File->new(">".$tophat_report_file) || die $!;
+        print $out $report_tophat;
+        $out->close;
 }
 
 =head2
@@ -785,6 +863,7 @@ sub usage
 USAGE: $0 -t [tool] [options] input file
 
 	align	align read to reference using tophat
+	tport	summary tophat report info to table
 	count	count aligned reads for each feature
 	norm	normalization of expression file
 	corre	generate correlation tables
