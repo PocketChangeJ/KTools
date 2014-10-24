@@ -35,11 +35,96 @@ elsif	($options{'t'} eq 'count')	{ rnaseq_count(\%options, \@ARGV); }	# parse mu
 elsif	($options{'t'} eq 'norm')	{ rnaseq_norm(\%options, \@ARGV);  }	# parse single dataset
 elsif	($options{'t'} eq 'corre')	{ rnaseq_corre(\%options, \@ARGV); }	# parse single dataset
 elsif	($options{'t'} eq 'unmap')	{ rnaseq_unmap(\%options, \@ARGV); }	# parse single dataset
+elsif   ($options{'t'} eq 'Dassembly')	{ rnaseq_Dassem(\%options, \@ARGV);}	# denovo assemble RNASeq reads
+elsif   ($options{'t'} eq 'Rassembly')  { rnaseq_Rassem(\%options, \@ARGV);}    # denovo assemble RNASeq reads
+elsif   ($options{'t'} eq 'mapping')	{ rnaseq_map(\%options, \@ARGV);   }	# align read to cDNA reference
+elsif	($options{'t'} eq 'blastn')	{ rnaseq_map(\%options, \@ARGV);   }	# blast assembled contigs to nt to remove contanmiantion
+elsif   ($options{'t'} eq 'seqclean')	{ rnaseq_seqclean(\%options, \@ARGV);}  # clean assembled contigs using seqclean
+elsif   ($options{'t'} eq 'annotate')   { rnaseq_annotate(\%options, \@ARGV);}  # generate annotation command by AHRD
 elsif	($options{'t'} eq 'pipeline')	{ pipeline(); }				# print pipelines
 else	{ usage($version); } 
 
 #################################################################
-# kentnf: subroutine for each function				#
+# kentnf: subroutine for denovo pipeline			#
+#################################################################
+=head2
+ rnaseq_Dassem: denovo assembly using trinity
+=cut
+sub rnaseq_Dassem
+{
+	my ($options, $files) = @_;
+
+	my $usage = qq'
+USAGE: $0 Dassembly [options] input1.fq input2.fq ...... | input1_r1_fq,input1_r2.fq input2_r1_fq,input2_r2.fq ...
+
+';
+}
+
+=head2
+ rnaseq_Rassem: reference based assemly using cufflinks
+=cut
+sub rnaseq_Rassem
+{
+
+}
+
+=head2
+ rnaseq_mapping: map rnaseq reads to cDNA reference
+=cut
+sub rnaseq_mapping
+{
+	my ($options, $files) = @_;
+
+	my $usage = qq'
+USAGE: $0 -t mapping [options] reference.fasta [input1.fq input2.fq ... | input1_r1_fq,input1_r2.fq input2_r1_fq,input2_r2.fq ...]
+
+	-p cpu
+	-a BWA|bowtie
+	-n edit distance
+
+';
+
+	# check input files
+	my @files = @$files;
+	print $usage and exit if (scalar(@files) < 2);
+	my $reference = shift @files;
+	print "[ERR]no reference\n $usage" and exit unless -s $reference;
+	foreach my $f (@files) {
+		my @a = split(/,/, $f);
+		if (scalar(@a) == 1)	{ print "[ERR]no input read $f\n" unless -s $f; }
+		elsif (scalar(@a) == 2) { print "[ERR]no input read1 $a[0]\n" unless -s $a[0]; print "[ERR]no input read2 $a[1]\n" unless -s $a[1]; }
+		else { print "[ERR]input read $f\n"; }
+	}
+
+	# check input parameters
+	my $distance = 0; $distance = $$options{'n'} if defined $$options{'n'};
+	print "[ERR]edit distance: $distance\n" if $distance > 3;
+	my $cpu = 32; $cpu = $$options{'p'} if defined $$options{'p'};
+	my $program = 'bwa'; $program = $$options{'a'} if defined $$options{'a'};
+	print "[ERR]aglin program: $program\n" if $program ne 'bwa' && $program ne 'bowtie';
+
+
+}
+
+=head2
+ rnaseq_ctgFeature: convert contigs to feature
+=cut
+sub rnaseq_ctgFeature
+{
+	my ($options, $files) = @_;	
+	my $usage = qq'
+USAGE: $0 -t ctgFeature contig.fasta > feature.bed
+
+';
+	print $usage and exit unless -s $$files[0];
+	my $in = Bio::SeqIO->new(-format=>'fasta', -file=>$file);
+	while(my $inseq = $in->next_seq) {
+		print $inseq->id,"\t0\t",$inseq->length,"\t", $inseq->id,"\t",$inseq->length,"\t+\n",
+	}
+}
+
+#################################################################
+# kentnf: subroutine for reference pipeline			#
 #################################################################
 =head2
  rnaseq_align: align rnaseq_read to reference genome, generate report
@@ -937,15 +1022,16 @@ sub pipeline
 
 1. align RNASeq read to reference (Tophat2)
    \$mRNAtool.pl -t align -s PS -d /home/database/tomato_genome -l fr-firststrand -p 24 -n 2 inputA_1.fastq,inputA_2.fastq ... inputN_1.fastq,inputN_2.fastq
+   \$mRNAtool.pl -t tport *_tophat/*.txt > report_tophat.txt
 
-2. count aligned reads for each feature
+2. count aligned reads for each feature, and normalization
    \$mRNAtool.pl -t count -s PS -l fr-firststrand -f feature.bed -o project_exp inputA.bam ... inputN.bam
+   \$mRNAtool.pl -t norm  -f feature.bed -u report_tophat.txt project_raw_count.txt > project_rpkm.txt
 
-3. normalization
-   \$mRNAtool.pl -t norm  -f feature.bed project_raw_count.txt > project_rpkm.txt
-
-4. correlation
+3. correlation
    \$mRNAtool.pl -t corre project_rpkm.txt > project_corr.txt
+
+4. statistics analysis
 
 >> RNASeq denovo pipeline
 
@@ -960,6 +1046,7 @@ sub pipeline
 >> RNASeq debug utils
 
 A. get unmapped reads
+   \$mRNAtool.pl -t unmap -u 2 input_bam,input_read_r1,input_read_r2 ...
 
 
 ';
