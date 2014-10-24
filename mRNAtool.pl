@@ -415,6 +415,8 @@ USAGE: $0 [options] input1.bam input2.bam ......
 			}
 		}
 		$fh->close;
+
+		unlink($sam); # remove sam for saving space
 	}
 
 	# output raw count
@@ -677,23 +679,39 @@ sub rnaseq_unmap
 	my $usage = qq'
 USAGE: $0 -t unmap [options] bam,read ... | bam,read_1,read2 ... 
 	
-	-u	[1-3] level for paired end mapped
-		1. only paired aligned
-		2. paired align + single align
-		3. paired align + single align(paired)
+	-u  [1-2] level for paired end mapped
+	    1. only paired aligned
+	    2. paired align + single align(paired)
+
 ';
+	if (scalar(@$file) == 0) {
+		print $usage; exit;
+	}
 
 	my $u = 2;
-	$u = $$options{'u'} if (defined $$options{'u'} && $$options{'u'} > 0 && $$options{'u'} < 4);
+	$u = $$options{'u'} if (defined $$options{'u'} && $$options{'u'} > 0 && $$options{'u'} < 3);
 
 	# check input files
-	my @new_file;
+	my ($format1, $format2);
 	foreach my $set (@$file) {
 		my @a = split(/,/, $set);
 		print "[ERR]no bam file: $set\n" and exit unless ( $a[0] =~ m/\.bam$/ );
 		print "[ERR]no bam file: $set\n" and exit unless -s $a[0];
-		print "[ERR]no read1 file: $set\n" and exit unless -s $a[1];
-		push(@new_file, "$a[0],$a[1]");
+
+		if (scalar(@a) == 2) {
+			print "[ERR]no read1 file: $set\n" and exit unless -s $a[1];
+			$format1 = check_seq_format($a[1]);
+			print "[ERR]seq format: $format1 for $a[1]\n" and exit if ($format1 ne 'fastq' && $format1 ne 'fasta');
+		} elsif (scalar(@a) == 3) {
+			print "[ERR]no read1 file: $set\n" and exit unless -s $a[1];
+			print "[ERR]no read2 file: $set\n" and exit unless -s $a[2];
+			$format1 = check_seq_format($a[1]);
+			$format2 = check_seq_format($a[2]);
+			print "[ERR]seq format: $format1 for $a[1]\n" and exit if ($format1 ne 'fastq' && $format2 ne 'fasta');
+			print "[ERR]seq format: $format2 for $a[2]\n" and exit if ($format2 ne 'fastq' && $format2 ne 'fasta');
+		} else {
+			print "[ERR]set $set\n" and exit;
+		}
 	}
 
 	# main: get unmapped reads
@@ -705,25 +723,33 @@ USAGE: $0 -t unmap [options] bam,read ... | bam,read_1,read2 ...
 		run_cmd("samtools view $bam > $sam");
 
 		# load reads flag to hash
-		my %read_flag;
+		my %mapped_read;
 		my $fh1 = IO::File->new($sam) || die $!;
 		while(<$fh1>)
 		{
 			chomp;
 			next if $_ =~ m/^@/;
 			my @a = split(/\t/, $_);
-			if (defined $read_flag{$a[0]}) {
-				my @f = split(/\t/, $read_flag{$a[0]});
-				my %flg;
-				foreach my $f (@f) { $flg{$f} = 1; }
-				unless ( defined $flg{$a[1]} ) {
-					$read_flag{$a[0]}.="\t".$a[1];
+			if ($a[1] & 0x1) # paired-end
+			{
+				if ($u == 1) 
+				{
+					if (($a[1] & 0x4) || ($a[1] & 0x8)) {}
+					else { $mapped_read{$a[0]} = 1; }
 				}
-			} else { 
-				$read_flag{$a[0]} = $a[1]; 
+				elsif ($u == 2)
+				{
+					$mapped_read{$a[0]} = 1 unless ($a[1] & 0x4);
+				}
+			}
+			else		 # single-end
+			{
+				$mapped_read{$a[0]} = 1 unless ($a[1] & 0x4);
 			}
 		}
 		$fh1->close;
+
+		print "No. of mapped reads: ".scalar(keys(%mapped_read))."\n";
 
 		if (scalar(@a) == 2)
 		{
@@ -737,54 +763,79 @@ USAGE: $0 -t unmap [options] bam,read ... | bam,read_1,read2 ...
 				elsif	($id =~ m/^@/) { $format = 'fastq'; $id =~ s/^@//; }
 				else	{ die "[ERR]seq format $id\n"; }
 				my $tid = $id; $tid =~ s/ .*//;
+				$tid =~ s/\/\d$// if $tid =~ m/\/\d$/;
 				my $seq = <$fh2>; chomp($seq);
 				if ($format eq 'fastq') { <$fh2>; <$fh2>; }
-			
-				if (defined $read_flag{$tid}) {
-					my @f = split(/\t/, $read_flag{$tid});
-					foreach my $flg (@f) 
-					{
-						my $flg_stat = parse_flag($flg);
-						if ($flg_stat =~ m/unmapped/) { print $out ">$id\n$seq\n"; }
-					}
-				} else {
-					print $out ">$id\n$seq\n";
-				}
+				print $out ">$id\n$seq\n" unless defined $mapped_read{$tid};
 			}
 			$fh2->close;
 			$out->close;
 		}
 		elsif (scalar(@a) == 3)
 		{
-			# parse read flag according parameter U
-			my %select_read;
-			
-			foreach my $r (sort keys %read_flag) 
+			my $unmap_file1 = $a[1].".unmap";
+			my $unmap_file2 = $a[2].".unmap";
+                        my $out1 = IO::File->new(">".$unmap_file1) || die $!;
+			my $out2 = IO::File->new(">".$unmap_file2) || die $!;
+
+			my $fh2 = IO::File->new($a[1]) || die $!;
+			while(<$fh2>)
 			{
-				my @fn = split(/\t/, $read_flag{$r});
-				
-				my $paired = 0;	# left, right, pair
-				my $single = 0;
-				foreach my $flag_num (@fn) 
-				{
-					my @flag_stat = parse_flag($flag_num);
-					my $flag_stat = join("#", @flag_stat);
-					if ($flag_stat =~ m/paired/) {
-						if ($flag_stat =~ m/unmapped/) {
-							$single = 'left' if $flag_stat =~ m/left/;
-							$single = 'right' if $flag_stat =~ m/right/;
-						} else {
-							$paired = 1;
-						}
-					}
-				}	
+				my $id = $_; chomp($id); my $format;
+                                if      ($id =~ m/^>/) { $format = 'fasta'; $id =~ s/^>//; }
+                                elsif   ($id =~ m/^@/) { $format = 'fastq'; $id =~ s/^@//; }
+                                else    { die "[ERR]seq format $id\n"; }
+                                my $tid = $id; $tid =~ s/ .*//;
+				$tid =~ s/\/\d$// if $tid =~ m/\/\d$/;
+                                my $seq = <$fh2>; chomp($seq);
+                                if ($format eq 'fastq') { <$fh2>; <$fh2>; }
+				print $out1 ">$id\n$seq\n" unless defined $mapped_read{$tid};
 			}
+			$fh2->close;
+
+			my $fh3 = IO::File->new($a[2]) || die $!;
+			while(<$fh3>)
+			{
+				my $id = $_; chomp($id); my $format;
+                                if      ($id =~ m/^>/) { $format = 'fasta'; $id =~ s/^>//; }
+                                elsif   ($id =~ m/^@/) { $format = 'fastq'; $id =~ s/^@//; }
+                                else    { die "[ERR]seq format $id\n"; }
+                                my $tid = $id; $tid =~ s/ .*//;
+				$tid =~ s/\/\d$// if $tid =~ m/\/\d$/;
+                                my $seq = <$fh3>; chomp($seq);
+                                if ($format eq 'fastq') { <$fh3>; <$fh3>; }
+				print $out2 ">$id\n$seq\n" unless defined $mapped_read{$tid};
+			}
+			$fh3->close;
+			
+			$out1->close;
+			$out2->close;
 		}
 		else
 		{
 			print "[WARN]set has error: $set\n";
-		}	
+		}
+
+		unlink($sam); # delte sam file for saving space
 	}
+}
+
+=head2
+ check_seq_format: check seq format 
+=cut
+sub check_seq_format
+{
+	my $seq_file = shift;
+	my $format;
+	my $seq_top = `head -n 8 $seq_file`; 
+	chomp($seq_top); 
+	my @a = split(/\n/, $seq_top);	
+	if ($a[0] =~ m/^>/ && $a[2] =~ m/^>/ && $a[4] =~ m/^>/ && $a[6] =~ m/^>/) {
+		$format = 'fasta';
+	} elsif ( $a[0] =~ m/^@/ && $a[2] =~ m/^\+/ && $a[4] =~ m/^@/ && $a[6] =~ m/^\+/) {
+		$format = 'fastq';
+	}
+	return $format;
 }
 
 =head2
@@ -794,10 +845,10 @@ sub parse_flag
 {
 	my $flag_num = shift;
 	my @flag_stat = '';
-	if ($flag_num & 0x1)    { push(@flag_stat, "Paired"); }
+	if ($flag_num & 0x1)    { push(@flag_stat, "paired"); }
 	if ($flag_num & 0x2)    { push(@flag_stat, "GoodAligned"); } 	
-	if ($flag_num & 0x4)    { push(@flag_stat, "UnmappedSeg"); }
-	if ($flag_num & 0x8)    { push(@flag_stat, "Unmapped 2ndSeg"); }
+	if ($flag_num & 0x4)    { push(@flag_stat, "unmap1stSeg"); }
+	if ($flag_num & 0x8)    { push(@flag_stat, "unmap2ndSeg"); }
 	if ($flag_num & 0x10)   { push(@flag_stat, "1stSEQ=RC"); }
 	if ($flag_num & 0x20)   { push(@flag_stat, "2ndSEQ=RC"); }
 	if ($flag_num & 0x40)   { push(@flag_stat, "Left"); }
