@@ -648,7 +648,7 @@ USAGE: $0 -t norm -f feature.bed -u report_tophat.txt -d decimal(default: 2) pro
 			print "[ERR]no libsize for sample $title[$i]\n" and exit unless defined $sample_libsize{$title[$i]};
 			my $lib_size = $sample_libsize{$title[$i]};
 			my $rpkm = ($a[$i] * 1000 * 1000000) / ($length * $lib_size);
-			$rpkm = sprintf("%.$decimal"."f" , $rpkm);
+			$rpkm = sprintf("%.$decimal"."f" , $rpkm) if $rpkm > 0;
 			$output.="\t".$rpkm;
 		}
 
