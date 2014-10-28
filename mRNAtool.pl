@@ -117,7 +117,7 @@ USAGE: $0 -t ctgFeature contig.fasta > feature.bed
 
 ';
 	print $usage and exit unless -s $$files[0];
-	my $in = Bio::SeqIO->new(-format=>'fasta', -file=>$file);
+	my $in = Bio::SeqIO->new(-format=>'fasta', -file=>$$files[0]);
 	while(my $inseq = $in->next_seq) {
 		print $inseq->id,"\t0\t",$inseq->length,"\t", $inseq->id,"\t",$inseq->length,"\t+\n",
 	}
@@ -583,7 +583,7 @@ sub rnaseq_norm
 {
 	my ($options, $file) = @_;
 	my $usage = qq'
-USAGE: $0 -t norm -f feature.bed -u report_tophat.txt project_raw_count.txt > project_rpkm.txt
+USAGE: $0 -t norm -f feature.bed -u report_tophat.txt -d decimal(default: 2) project_raw_count.txt > project_rpkm.txt
 
 ';
 	# check input file
@@ -592,6 +592,10 @@ USAGE: $0 -t norm -f feature.bed -u report_tophat.txt project_raw_count.txt > pr
 	print "[ERR]no exp file $exp_file\n" and exit unless -s $exp_file;
 	print "[ERR]no feature file\n$usage" and exit unless defined $$options{'f'};
 	print "[ERR]no tophat report file\n$usage" and exit unless defined $$options{'u'};
+
+	my $decimal = 2;
+	$decimal = $$options{'d'} if defined $$options{'d'} && $$options{'d'} > 0;
+
 
 	# check libsize and sample name
 	my %sample_libsize;
@@ -644,7 +648,7 @@ USAGE: $0 -t norm -f feature.bed -u report_tophat.txt project_raw_count.txt > pr
 			print "[ERR]no libsize for sample $title[$i]\n" and exit unless defined $sample_libsize{$title[$i]};
 			my $lib_size = $sample_libsize{$title[$i]};
 			my $rpkm = ($a[$i] * 1000 * 1000000) / ($length * $lib_size);
-			$rpkm = sprintf("%.2f", $rpkm);
+			$rpkm = sprintf("%.$decimal"."f" , $rpkm);
 			$output.="\t".$rpkm;
 		}
 
