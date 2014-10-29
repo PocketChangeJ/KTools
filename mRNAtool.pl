@@ -38,6 +38,7 @@ elsif	($options{'t'} eq 'unmap')	{ rnaseq_unmap(\%options, \@ARGV); }	# parse si
 elsif   ($options{'t'} eq 'Dassembly')	{ rnaseq_Dassem(\%options, \@ARGV);}	# denovo assemble RNASeq reads
 elsif   ($options{'t'} eq 'Rassembly')  { rnaseq_Rassem(\%options, \@ARGV);}    # denovo assemble RNASeq reads
 elsif   ($options{'t'} eq 'mapping')	{ rnaseq_map(\%options, \@ARGV);   }	# align read to cDNA reference
+elsif   ($options{'t'} eq 'ctgFeature')	{ rnaseq_ctgFeature(\%options, \@ARGV);}# generate feature bed for reads aligned to cDNA reference		
 elsif	($options{'t'} eq 'blastn')	{ rnaseq_map(\%options, \@ARGV);   }	# blast assembled contigs to nt to remove contanmiantion
 elsif   ($options{'t'} eq 'seqclean')	{ rnaseq_seqclean(\%options, \@ARGV);}  # clean assembled contigs using seqclean
 elsif   ($options{'t'} eq 'annotate')   { rnaseq_annotate(\%options, \@ARGV);}  # generate annotation command by AHRD
@@ -56,6 +57,8 @@ sub rnaseq_Dassem
 
 	my $usage = qq'
 USAGE: $0 Dassembly [options] input1.fq input2.fq ...... | input1_r1_fq,input1_r2.fq input2_r1_fq,input2_r2.fq ...
+
+example: Trinity --seqType fq --JM 50G --left EB_l1_1.clean.PE.fq,FB_l1_1.clean.PE.fq --right EB_l1_2.clean.PE.fq,FB_l1_2.clean.PE.fq --SS_lib_type RF --output assembly_k3   --min_kmer_cov 3 --CPU 8 --bflyCPU 8 --inchworm_cpu 8 --path_reinforcement_distance 25 > assembly_SS_k3.log
 
 ';
 }
@@ -81,7 +84,9 @@ USAGE: $0 -t mapping [options] reference.fasta [input1.fq input2.fq ... | input1
 	-p cpu
 	-a BWA|bowtie
 	-n edit distance
-
+	-m mode (1: keep unmapped reads, 2: generate aligned bam file)
+	-l fr-firststrand, fr-secondstrand, fr-unstranded
+	
 ';
 
 	# check input files
@@ -102,8 +107,6 @@ USAGE: $0 -t mapping [options] reference.fasta [input1.fq input2.fq ... | input1
 	my $cpu = 32; $cpu = $$options{'p'} if defined $$options{'p'};
 	my $program = 'bwa'; $program = $$options{'a'} if defined $$options{'a'};
 	print "[ERR]aglin program: $program\n" if $program ne 'bwa' && $program ne 'bowtie';
-
-
 }
 
 =head2
@@ -115,12 +118,36 @@ sub rnaseq_ctgFeature
 	my $usage = qq'
 USAGE: $0 -t ctgFeature contig.fasta > feature.bed
 
+* after generate the feature, you could count the reads using count tool 
+
 ';
 	print $usage and exit unless -s $$files[0];
 	my $in = Bio::SeqIO->new(-format=>'fasta', -file=>$$files[0]);
 	while(my $inseq = $in->next_seq) {
 		print $inseq->id,"\t0\t",$inseq->length,"\t", $inseq->id,"\t",$inseq->length,"\t+\n",
 	}
+}
+
+=head2
+ rnase_annotate: generate command for rnaseq contig annotation 
+=cut
+sub rnaseq_annotate
+{
+	my ($options, $files) = @_;
+	my $usage = qq'
+>> pipeline for annotation
+1. AHRD, input file is input_ctg.fa
+    \$blastall -p blastx -i input_ctg.fa -o input_ctg_tr.pairwise -d uniprot_trembl_plant -e 0.0001 -v 200 -b 200 -m 0 -a 64
+    \&blastall -p blastx -i input_ctg.fa -o input_ctg_sp.pairwise -d uniprot_sprot.fasta -e 0.0001 -v 200 -b 200 -m 0 -a 64
+    \&blastall -p blastx -i input_ctg.fa -o input_ctg_at.pairwise -d TAIR10_pep_20110103_representative_gene_model_parse_desc -e 0.0001 -v 200 -b 200 -m 0 -a 64
+    \&mRNAtool.pl -t annotate -t n input_ctg.fa input_ctg_tr.pairwise input_ctg_sp.pairwise input_ctg_at.pairwise
+    * the output file is input_ctg.ahrd.csv
+
+2. GO annotation
+
+3. Pathway annotation
+    
+';
 }
 
 #################################################################
