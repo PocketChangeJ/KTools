@@ -140,14 +140,75 @@ sub rnaseq_annotate
     \$blastall -p blastx -i input_ctg.fa -o input_ctg_tr.pairwise -d uniprot_trembl_plant -e 0.0001 -v 200 -b 200 -m 0 -a 64
     \&blastall -p blastx -i input_ctg.fa -o input_ctg_sp.pairwise -d uniprot_sprot.fasta -e 0.0001 -v 200 -b 200 -m 0 -a 64
     \&blastall -p blastx -i input_ctg.fa -o input_ctg_at.pairwise -d TAIR10_pep_20110103_representative_gene_model_parse_desc -e 0.0001 -v 200 -b 200 -m 0 -a 64
-    \&mRNAtool.pl -t annotate -t n input_ctg.fa input_ctg_tr.pairwise input_ctg_sp.pairwise input_ctg_at.pairwise
+    \&mRNAtool.pl -t annotate -n input_ctg.fa input_ctg_tr.pairwise input_ctg_sp.pairwise input_ctg_at.pairwise
     * the output file is input_ctg.ahrd.csv
+    * the blast file should be input by order (SP, AT, and TR)
+    * please use "-n" if the input seq is nucleotie and blastx 
 
 2. GO annotation
 
 3. Pathway annotation
     
 ';
+	my @files = @$files;
+	print "[ERR]input files\n" and exit unless scalar (@files) == 4;
+	foreach my $f (@files) {
+		print "[ERR]file not exist $f\n" and exit unless -s $f;
+		# parse blast file if from code quest
+	}
+
+	my $output_file = $files[0];
+	$output_file =~ s/\.fa$//;
+	$output_file =~ s/\.fasta$//;
+	$output_file .= ".ahrd.csv";
+
+	my ($p1, $p2, $p3) = (0.5, 0.3, 0.2);
+	if (defined $$options{'n'}) { ($p1, $p2, $p3) = (0.6, 0.4, 0.0); }
+
+	my $ahrd_fdr = ${FindBin::RealBin}."/bin/AHRD";
+
+	# generate temp xml file for AHRD
+	my $temp_ahrd_yml = 'temp_ahrd.yml';
+	my $fh = IO::File->new(">".$temp_ahrd_yml) || die $!;
+	print $fh qq'
+proteins_fasta: $files[0]
+blast_dbs:
+  swissprot:
+    weight: 100
+    file: $files[1]
+    blacklist: $ahrd_fdr/blacklist_descline.txt
+    filter: $ahrd_fdr/filter_descline_sprot.txt
+    token_blacklist: $ahrd_fdr/blacklist_token.txt
+    description_score_bit_score_weight: 0.2
+
+  tair:
+    weight: 50
+    file: $files[2]
+    blacklist: $ahrd_fdr/blacklist_descline.txt
+    filter: $ahrd_fdr/filter_descline_tair.txt
+    token_blacklist: $ahrd_fdr/blacklist_token.txt
+    description_score_bit_score_weight: 0.4
+
+  trembl:
+    weight: 10
+    file: $files[3]
+    blacklist: $ahrd_fdr/blacklist_descline.txt
+    filter: $ahrd_fdr/filter_descline_trembl.txt
+    token_blacklist: $ahrd_fdr/blacklist_token.txt
+    description_score_bit_score_weight: 0.4
+
+#interpro_database: $ahrd_fdr/interpro_31.xml
+#interpro_result: $ahrd_fdr/interpro_result.raw
+#gene_ontology_result: $ahrd_fdr/go_results.csv
+token_score_bit_score_weight: $p1
+token_score_database_score_weight: $p2
+token_score_overlap_score_weight: $p3
+description_score_relative_description_frequency_weight: 0.6
+output: $output_file
+';
+
+	# run AHRD
+	run_cmd("java -Xmx20g -jar $ahrd_fdr/ahrd.jar $temp_ahrd_yml");
 }
 
 #################################################################
