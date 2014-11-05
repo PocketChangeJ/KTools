@@ -41,6 +41,7 @@ elsif   ($options{'t'} eq 'mapping')	{ rnaseq_map(\%options, \@ARGV);   }	# alig
 elsif   ($options{'t'} eq 'ctgFeature')	{ rnaseq_ctgFeature(\%options, \@ARGV);}# generate feature bed for reads aligned to cDNA reference		
 elsif	($options{'t'} eq 'blastn')	{ rnaseq_map(\%options, \@ARGV);   }	# blast assembled contigs to nt to remove contanmiantion
 elsif   ($options{'t'} eq 'seqclean')	{ rnaseq_seqclean(\%options, \@ARGV);}  # clean assembled contigs using seqclean
+elsif	($options{'t'} eq 'translate')	{ rnaseq_translate(\%options, \@ARGV);} # translate EST to protein
 elsif   ($options{'t'} eq 'annotate')   { rnaseq_annotate(\%options, \@ARGV);}  # generate annotation command by AHRD
 elsif	($options{'t'} eq 'pipeline')	{ pipeline(); }				# print pipelines
 else	{ usage($version); } 
@@ -129,7 +130,113 @@ USAGE: $0 -t ctgFeature contig.fasta > feature.bed
 }
 
 =head2
- rnase_annotate: generate command for rnaseq contig annotation 
+ rnaseq_translate: translate transcript to protein
+=cut
+sub rnaseq_translate
+{
+	my ($options, $files) = @_;
+	my $usage = qq'
+USAGE: $0 -t translate [options] transcript.fasta > protein.fasta
+
+	-m method used for translate 
+		6frame: 6frame translate (default)
+		3frame: 3frame translate (for strand-specific)
+		estscan: translate using estscan (for denovo assembled transcripts)
+	-l min length of protein (default: 100)
+	-t matrix_file for estscan
+
+	* the output translated proteins need to be select for best result
+
+';
+	# check input files and parameters
+	print "$usage" and exit unless defined $$files[0];
+	print "[ERR]no input transcripts\n" and exit unless -s $$files[0];
+	my $method = '6frame';
+	if (defined $$options{'m'} && ($$options{'m'} eq '3frame' || $$options{'m'} eq 'estscan' || $$options{'m'} eq '6frame')) {
+		$method = $$options{'m'};
+	} else {
+		print "[ERR]method $$options{'m'}\n" and exit;
+	}
+
+	my $min_len = 100;
+	$min_len = $$options{'l'} if (defined $$options{'l'} && $$options{'l'} > 30);
+
+        # array for order of 6 frames
+        my @frames = ('0F','1F', '2F','0R','1R','2R');
+	
+	if ($method eq '6frame' || $method eq '3frame')
+	{
+        	my $in = Bio::SeqIO->new(-format=>'fasta', -file=>$$files[0]);
+	        while(my $inseq = $in->next_seq)
+	        {
+        	        my $sequence = $inseq->seq;
+	                #my $revcom_seq = reverse($sequence);
+        	        #$revcom_seq =~ tr/ATCGNatcgn/TAGCNtagcn/;
+	                if ( $inseq->alphabet eq "rna" || $inseq->alphabet eq "dna" )
+        	        {
+                	        # translate to proteins
+	                        my @prots;
+        	                if ($method eq '6frame') {
+                	                @prots = Bio::SeqUtils->translate_6frames($inseq);
+	                        } else {
+        	                        @prots = Bio::SeqUtils->translate_3frames($inseq);
+                	        }
+
+	                        # filter translated proteins
+        	                for (my $i = 0; $i < @prots; $i++)
+                	        {
+	                                my $frame = $frames[$i];
+        	                        my $tseq = $prots[$i]->seq;
+                	                my $tid = $inseq->id."_".$frame;
+
+	                                #print ">$tid\n$tseq\n";
+        	                        my @t = split(//, $tseq);
+                	                my ($n_start, $n_end, $n_len, $a_len, $a_seq, $a_switch);
+                        	        $a_seq = ''; $a_switch = 0;
+
+	                                for( my $j=0; $j<@t; $j++)
+        	                        {
+                	                        if ($t[$j] eq "M" && $a_switch == 0) {
+                        	                        $a_switch = 1;
+                                	                $n_start = $j * 3 + 1;
+	                                        }
+
+        	                                $a_seq.=$t[$j] if $a_switch == 1;
+
+                	                        if ($t[$j] eq "*" && $a_switch == 1) {
+                        	                        $a_switch = 0;
+                                	                $n_end = $j * 3 + 3;
+
+	                                                # output protein seq
+        	                                        print "[ERR]no protein start $a_seq\n" and exit unless $a_seq =~ m/^M/;
+                	                                print "[ERR]no protein end $a_seq\n" and exit unless $a_seq =~ m/\*$/;
+                        	                        $a_len = length($a_seq) - 1;
+                                	                $n_len = $n_end - $n_start + 1;
+                                        	        if ($a_len >= 100) {
+                                                	        print ">$tid $n_start-$n_end:$n_len translated to $a_len\n$a_seq\n";
+	                                                }
+
+        	                                        $a_seq = '';
+                	                                $n_start = '';
+                        	                        $n_end = '';
+                                	        }
+
+	                                }
+        	                }
+	                }
+        	        else
+	                {
+        	                die "[ERR]input is not nucleotied $inseq->id\n";
+	                }
+	        }
+	} # end of 6frame and 3 frame method
+	else
+	{
+		print "just put ESTScan command to here";
+	}
+}
+=head2
+ rnaseq_annotate: generate command for rnaseq contig annotation 
 =cut
 sub rnaseq_annotate
 {
