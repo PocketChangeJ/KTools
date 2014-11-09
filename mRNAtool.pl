@@ -554,6 +554,8 @@ USAGE: $0 [options] input1.bam input2.bam ......
         PS (paired strand-specific);
         SS (single strand-specific);
  -f  [String]	gene feature file
+ -p  [Num]      extend 5\' length of feature position
+ -t  [Num]	extend 3\' length of feature position
  -l  [String]   Library type, fr-unstranded, fr-firststrand, fr-secondstrand (required)
  -o  [String]	prefix of output file (default : exp)
 
@@ -571,10 +573,11 @@ USAGE: $0 [options] input1.bam input2.bam ......
 	my $output_prefix = "exp";
 	$output_prefix = $$options{'o'} if defined $$options{'o'};
 	my $output_exp_raw  = $output_prefix."_raw_count.txt";
-	my $output_exp_norm = $output_prefix."_rpkm.txt";
 	die "[ERR]raw count exist\n" if -s $output_exp_raw;
-	die "[ERR]RPKM exist\n" if -s $output_exp_norm;
-	my $norm_method = "RPKM";
+
+	my ($p5extend, $p3extend) = (0,0);
+	$p5extend = $$options{'p'} if defined $$options{'p'} && $$options{'p'} > 0;
+	$p3extend = $$options{'t'} if defined $$options{'t'} && $$options{'t'} > 0;
 
 	# check alignment file
 	foreach my $f ( @$files ) { 
@@ -587,7 +590,7 @@ USAGE: $0 [options] input1.bam input2.bam ......
 	# change it base on genome size and density of feature
 	# set it small will use more memory, set it big will take more time to locate read to feature
 	my $bin_size = 1000;
-	my %feature_struc = load_feature_bed($feature_bed, $bin_size);
+	my %feature_struc = load_feature_bed($feature_bed, $bin_size, $p5extend, $p3extend);
 
 	# count expression for alignment
 	# key: file_name, feature_id, strand (sense or antisense)
@@ -927,7 +930,7 @@ USAGE: $0 -t corre [options] input_exp.txt > output_corre.txt
 =cut
 sub load_feature_bed
 {
-	my ($feature_bed, $bin_size) = @_;
+	my ($feature_bed, $bin_size, $p5extend, $p3extend) = @_;
 
 	# set bin size
 	# change it base on genome size and density of feature
@@ -944,6 +947,14 @@ sub load_feature_bed
 		next if $_ =~ m/^#/;
 		my @a = split(/\t/, $_);
 		($ref, $start, $end, $feature_id, $length, $strand) = ($a[0], $a[1]+1, $a[2], $a[3], $a[4], $a[5]);
+
+		if ($strand == '-') {
+			$start = $start - $p3extend;
+			$end = $end + $p5extend;
+		} else {
+			$start = $start - $p5extend;
+			$end = $end + $p3extend;
+		}
 
 		for(my $p = $start; $p < $end; $p = $p + $bin_size)
 		{
