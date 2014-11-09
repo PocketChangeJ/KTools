@@ -252,10 +252,18 @@ sub rnaseq_annotate
     * the blast file should be input by order (SP, AT, and TR)
     * please use "-n" if the input seq is nucleotie and blastx 
 
-2. GO annotation
+2. GO annotation (using blast result from AHRD)
+    \$parse_blast.pl input_ctg_tr.pairwise 5 > input_ctg_tr.blast.table
+    \$parse_blast.pl input_ctg_sp.pairwise 5 > input_ctg_sp.blast.table
+    \$cat input_ctg_tr.blast.table input_ctg_sp.blast.table > input_ctg_uniport.blast.table
+    \$go_link_gene.pl input_ctg_uniport.blast.table parsed_go_mapping_file[option] > gene_GO
+    \$go_generate_associate.pl gene_GO organism > associate_file
+    \$go_enrichment.pl -i list_gene_id -a associate_file
+    \$go_slim.pl -a associate_file 
 
 3. Pathway annotation
-    
+    * parse the AHRD csv file then fed to PathwayTools to perform analysis
+ 
 ';
 	my @files = @$files;
 	print "[ERR]input files\n" and exit unless scalar (@files) == 4;
