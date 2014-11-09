@@ -14,7 +14,7 @@ my $version = 0.1;
 my $debug = 0;
 
 my %options;
-getopts('t:s:l:e:d:p:n:f:u:h', \%options);
+getopts('a:b:c:d:e:f:g:i:j:k:l:m:n:o:p:q:r:s:t:u:v:w:x:y:z:h', \%options);
 
 unless (defined $options{'t'} ) { usage($version); }
 
@@ -778,7 +778,10 @@ sub rnaseq_norm
 {
 	my ($options, $file) = @_;
 	my $usage = qq'
-USAGE: $0 -t norm -f feature.bed -u report_tophat.txt -d decimal(default: 2) project_raw_count.txt > project_rpkm.txt
+USAGE: $0 -t norm -f feature.bed -m method(default:1) -u report_tophat.txt -d decimal(default: 2) project_raw_count.txt > project_rpkm.txt
+	normalization method: 
+	1 -- RPKM
+	2 -- RPM 
 
 ';
 	# check input file
@@ -791,6 +794,8 @@ USAGE: $0 -t norm -f feature.bed -u report_tophat.txt -d decimal(default: 2) pro
 	my $decimal = 2;
 	$decimal = $$options{'d'} if defined $$options{'d'} && $$options{'d'} > 0;
 
+	my $method = '1';
+	$method = $$options{'m'} if defined $$options{'m'} && $$options{'m'} == 2;
 
 	# check libsize and sample name
 	my %sample_libsize;
@@ -842,9 +847,14 @@ USAGE: $0 -t norm -f feature.bed -u report_tophat.txt -d decimal(default: 2) pro
 		{
 			print "[ERR]no libsize for sample $title[$i]\n" and exit unless defined $sample_libsize{$title[$i]};
 			my $lib_size = $sample_libsize{$title[$i]};
-			my $rpkm = ($a[$i] * 1000 * 1000000) / ($length * $lib_size);
-			$rpkm = sprintf("%.$decimal"."f" , $rpkm) if $rpkm > 0;
-			$output.="\t".$rpkm;
+			my $norm;
+			if ($method == 1) { 
+				$norm = ($a[$i] * 1000 * 1000000) / ($length * $lib_size);
+			} elsif ($method == 2) {
+				$norm = ($a[$i] * 1000000) / $lib_size;
+			}
+			$norm = sprintf("%.$decimal"."f" , $norm) if $norm > 0;
+			$output.="\t".$norm;
 		}
 
 		print $output."\n";
