@@ -562,8 +562,8 @@ USAGE: $0 [options] input1.bam input2.bam ......
         PS (paired strand-specific);
         SS (single strand-specific);
  -f  [String]	gene feature file
- -p  [Num]      extend 5\' length of feature position
- -t  [Num]	extend 3\' length of feature position
+ -a  [Num]      extend 5\' length of feature position
+ -b  [Num]	extend 3\' length of feature position
  -l  [String]   Library type, fr-unstranded, fr-firststrand, fr-secondstrand (required)
  -o  [String]	prefix of output file (default : exp)
 
@@ -584,8 +584,8 @@ USAGE: $0 [options] input1.bam input2.bam ......
 	die "[ERR]raw count exist\n" if -s $output_exp_raw;
 
 	my ($p5extend, $p3extend) = (0,0);
-	$p5extend = $$options{'p'} if defined $$options{'p'} && $$options{'p'} > 0;
-	$p3extend = $$options{'t'} if defined $$options{'t'} && $$options{'t'} > 0;
+	$p5extend = $$options{'a'} if defined $$options{'a'} && $$options{'a'} > 0;
+	$p3extend = $$options{'b'} if defined $$options{'b'} && $$options{'b'} > 0;
 
 	# check alignment file
 	foreach my $f ( @$files ) { 
