@@ -11,7 +11,8 @@ use IO::File;
 my $usage = qq'
 USAGE: perl $0 input_sam (RNASeq align to cDNA) > output
 
-* geneate plot using excel
+* align RNA-seq read to cDNA sequence to generate sam file
+* run this script and geneate plot from output using excel
 
 ';
 

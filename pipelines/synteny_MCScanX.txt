@@ -1,0 +1,16 @@
+
+# Self-Blast vv
+formatdb -i vv_rep_pep -p T
+blastall -i vv_rep_pep -d vv_rep_pep -p blastp -e 1e-10 -b 5 -v 5 -a 24 -m 8 -o vv.blast
+
+# Blast against reference vv vs at
+blastall -i at_rep_pep -d vv_rep_pep -p blastp -e 1e-10 -b 5 -v 5 -a 24 -m 8 -o at_vv.blast
+
+# mcScan
+./../MCScanX/MCScanX vv
+./../MCScanX/MCScanX at_vv
+
+# syn analysis
+perl /home/kentnf/pipeline/iTAK/synteny/plant_synteny.pl -i vv_bHLH -a vv_gene_position -b vv.collinearity -c vv_chrSize -x at_gene_position -y at_vv.collinearity -z at_chrSize
+
+

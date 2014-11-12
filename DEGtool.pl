@@ -2,14 +2,14 @@
 
 =head
 
-05/23/2013
-combine DESeq and edgeR to one program
+Plan: 1. make this pipeline to modular
+      2. integrade NOISeq to it
+      3. add DE_filter tool for filter sig DEG with different qvalue and fold change
+      4. write description about how to use this tool in DEGanalysis pipeline
 
-06/12/2012
-generate pdf for each comparison, including PCA plot, MA plot, and BCV plot.
-
-06/11/2012
-identify DE genes using edgeR
+05/23/2013:combine DESeq and edgeR to one program
+06/12/2012:generate pdf for each comparison, including PCA plot, MA plot, and BCV plot.
+06/11/2012:identify DE genes using edgeR
 
 =cut
 
@@ -19,8 +19,9 @@ use IO::File;
 use Getopt::Long;
 
 my $usage = qq'
-Perl DEGs_pipeline.pl [options]
+Perl DEGs_pipeline.pl -t tools [options]
 
+	-t tools
 	-i raw_count 
 	-r rpkm_file 
 	-c comparison_list 
