@@ -72,11 +72,24 @@ sub run_cmd
 =cut
 sub pack_trimmomatic
 {
-	my ($fq_file, $trim_log) = shift;
+	my ($fq_file, $trim_log, $trim_pack) = shift;
 
 
-	# load trim log file
-	
+	# load trim log file to hash
+	# key: read ID (with DESC); start, length 
+	# value: start length
+	my %trim_log
+	my $fh = IO::File->new($trim_log) || die $!;
+	while(<$fh>)
+	{
+		chomp;
+		my @a = split(/\t/, $_);
+		
+	}
+	$fh;	
+
+	# parse fastq file with trim log, output packed trimmed file
+
 
 }
 

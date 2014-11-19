@@ -35,6 +35,7 @@ elsif	($options{'t'} eq 'count')	{ rnaseq_count(\%options, \@ARGV); }	# parse mu
 elsif	($options{'t'} eq 'norm')	{ rnaseq_norm(\%options, \@ARGV);  }	# parse single dataset
 elsif	($options{'t'} eq 'corre')	{ rnaseq_corre(\%options, \@ARGV); }	# parse single dataset
 elsif	($options{'t'} eq 'unmap')	{ rnaseq_unmap(\%options, \@ARGV); }	# parse single dataset
+elsif   ($options{'t'} eq 'isize')      { rnaseq_isize(\%options, \@ARGV); }    # parse single dataset, get insert size for paired end dataset
 elsif   ($options{'t'} eq 'Dassembly')	{ rnaseq_Dassem(\%options, \@ARGV);}	# denovo assemble RNASeq reads
 elsif   ($options{'t'} eq 'Rassembly')  { rnaseq_Rassem(\%options, \@ARGV);}    # denovo assemble RNASeq reads
 elsif   ($options{'t'} eq 'mapping')	{ rnaseq_map(\%options, \@ARGV);   }	# align read to cDNA reference
@@ -956,7 +957,7 @@ sub load_feature_bed
 		my @a = split(/\t/, $_);
 		($ref, $start, $end, $feature_id, $length, $strand) = ($a[0], $a[1]+1, $a[2], $a[3], $a[4], $a[5]);
 
-		if ($strand == '-') {
+		if ($strand eq '-') {
 			$start = $start - $p3extend;
 			$end = $end + $p5extend;
 		} else {
