@@ -25,10 +25,19 @@ use FindBin;
 use IO::File;
 use Getopt::Long;
 
-my $usage = qq'
-Perl MaoSNP_pipeline.pl input_RNA_seq reference comparison_file[option]
 
-* example of input RNASeq
+sub snp_pipeline
+{
+	my ($options, $files) = @_;
+
+	my $usage = qq'
+USAGE: perl $0 -t SNP -r reference [options]  input_RNASeq_list
+
+	-p	thread
+	-c	comparison file
+	-e	run the script
+
+* example of input RNASeq list
 sampleName [tab] read_file1,read_file2 [tab] read_file3 ..... read_fileN
 
 sampleName must diff with any read file name
@@ -36,105 +45,105 @@ read_file1,read_file2 are paired end reads
 read_file3 are single end reads
 
 * example of comparison_file
-sampleNameA \t sampleNameB
+sampleNameA [tab] sampleNameB
 
-';
+';	
+	print $usage and exit unless defined $$files[0];
+	print "[ERR]no input RNAseq file\n" and exit unless -s $$files[0];
+	my $input_list = $$files[0];
 
-my $input_list = shift || die $usage;
-my $genome = shift || die $usage;
-my $comparison_file = shift;
+	print "[ERR]no reference\n" and exit unless defined $$options{'r'};
+	my $genome = $$options{'r'};
 
-#################################################################
-# init parameters and vars					#
-#################################################################
-my $ref_SNP_enable = 1;
-my $reSeqPrint = 1;
+	my $comparison_file = $$options{'c'} if defined $$options{'c'};
+	
+	#################################################################
+	# init parameters and vars					#
+	#################################################################
+	my $ref_SNP_enable = 1;
+	my $reSeqPrint = 1;
 
-my $debug = 1;
-my $cpu = 24;
-my $add_pileup = 1;
+	my $debug = 1;
+	my $cpu = 24;
+	my $add_pileup = 1;
 
-#################################################################
-# load comparison file to hash					#
-# hash $cultivar						#
-# key: cultivar name; value: 1					#
-# hash $comparison						#
-# key: cultivarA \t cultivarB; value: 1				#
-#								#
-# check cultivars exist in comparison file			#
-#################################################################
-my ($cultivar, $comparison) = load_comparison($comparison_file);
-my $error = check_comparison($input_list, $cultivar); die if $error;
+	#################################################################
+	# load comparison file to hash					#
+	# hash $cultivar						#
+	# key: cultivar name; value: 1					#
+	# hash $comparison						#
+	# key: cultivarA \t cultivarB; value: 1				#
+	#								#
+	# check cultivars exist in comparison file			#
+	#################################################################
+	my ($cultivar, $comparison) = load_comparison($comparison_file);
+	my $error = check_comparison($input_list, $cultivar); die if $error;
 
-#################################################################
-# check if the genome is indexed by bwa				#
-# check if the genome is indexed by samtools faidx		#
-# generate chrOrder file base one genome sequences		#
-#################################################################
-my $chrOrder_file = "chrOrder";
-check_genome($genome, $chrOrder_file);
+	#################################################################
+	# check if the genome is indexed by bwa				#
+	# check if the genome is indexed by samtools faidx		#
+	# generate chrOrder file base one genome sequences		#
+	#################################################################
+	my $chrOrder_file = "chrOrder";
+	check_genome($genome, $chrOrder_file);
 
-#################################################################
-# generate command to produce pileup files 			#
-#################################################################
-my (%cmd_pileup) = generate_pileup($input_list, $genome, $cpu, $debug);
+	#################################################################
+	# generate command to produce pileup files 			#
+	#################################################################
+	my (%cmd_pileup) = generate_pileup($input_list, $genome, $cpu, $debug);
 
-foreach my $cul (sort keys %cmd_pileup) { print $cmd_pileup{$cul}; }
+	foreach my $cul (sort keys %cmd_pileup) { print $cmd_pileup{$cul}; }
 
-#################################################################
-# perform comparison analysis					#
-#################################################################
-if (-s $comparison_file)
-{
-	foreach my $comparison (sort keys %$comparison)
+	#################################################################
+	# perform comparison analysis					#
+	#################################################################
+	if (-s $comparison_file)
 	{
-		my ($cultivarA, $cultivarB) = split(/\t/, $comparison);
-		my ($pileupA, $pileupB) = ($cultivarA.".pileup", $cultivarB.".pileup");
-		my $script = ${FindBin::RealBin}."/bin/combine2PileFiles";
-		my $cmd_combine2PileFiles = "$script $pileupA $pileupB 0.9 0.8 $chrOrder_file 3";
-		print $cmd_combine2PileFiles."\n";
-		#system($cmd_combine2PileFiles) && die "Error in command: $cmd_combine2PileFiles\n";
+		foreach my $comparison (sort keys %$comparison)
+		{
+			my ($cultivarA, $cultivarB) = split(/\t/, $comparison);
+			my ($pileupA, $pileupB) = ($cultivarA.".pileup", $cultivarB.".pileup");
+			my $script = ${FindBin::RealBin}."/bin/combine2PileFiles";
+			my $cmd_combine2PileFiles = "$script $pileupA $pileupB 0.9 0.8 $chrOrder_file 3";
+			print $cmd_combine2PileFiles."\n";
+			#system($cmd_combine2PileFiles) && die "Error in command: $cmd_combine2PileFiles\n";
+		}
+	}
+
+	#################################################################
+	# call SNPs between cultivar and reference			#
+	#################################################################
+	if ($ref_SNP_enable)
+	{
+		foreach my $cultivar (sort keys %cmd_pileup)
+		{
+			my $pileup = $cultivar.".pileup";
+			my $script = ${FindBin::RealBin}."/bin/pileupFilter.AtoG";
+			my $cmd_pileupFilter = "$script 0.9 0.8 3 $pileup";
+			print $cmd_pileupFilter."\n";
+			#system($cmd_pileupFilter) && die "Error in command: $cmd_pileupFilter\n";
+		}
+	}
+
+	#################################################################
+	# reSeqPrintSample virtual genome using SNP			#
+	#################################################################
+	if ($reSeqPrint)
+	{
+		foreach my $cultivar (sort keys %cmd_pileup)
+		{
+			my $pileup = $cultivar.".pileup";
+			my $col = $cultivar.".1col";
+			my $script = ${FindBin::RealBin}."/bin/reSeqPrintSample.indel.fast.strAssign.RNAseq.table";
+			my $cmd_reSeqPrint = "$script $genome $col $pileup $cultivar 3 3 0.3";
+			print $cmd_reSeqPrint."\n";
+			#system($cmd_reSeqPrint) && die "Error in command: $cmd_reSeqPrint\n";
+		}
 	}
 }
 
-#################################################################
-# call SNPs between cultivar and reference			#
-#################################################################
-if ($ref_SNP_enable)
-{
-	foreach my $cultivar (sort keys %cmd_pileup)
-	{
-		my $pileup = $cultivar.".pileup";
-		my $script = ${FindBin::RealBin}."/bin/pileupFilter.AtoG";
-		my $cmd_pileupFilter = "$script 0.9 0.8 3 $pileup";
-		print $cmd_pileupFilter."\n";
-		#system($cmd_pileupFilter) && die "Error in command: $cmd_pileupFilter\n";
-	}
-}
-
-#################################################################
-# reSeqPrintSample virtual genome using SNP			#
-#################################################################
-if ($reSeqPrint)
-{
-	foreach my $cultivar (sort keys %cmd_pileup)
-	{
-		my $pileup = $cultivar.".pileup";
-		my $col = $cultivar.".1col";
-		my $script = ${FindBin::RealBin}."/bin/reSeqPrintSample.indel.fast.strAssign.RNAseq.table";
-		my $cmd_reSeqPrint = "$script $genome $col $pileup $cultivar 3 3 0.3";
-		print $cmd_reSeqPrint."\n";
-		#system($cmd_reSeqPrint) && die "Error in command: $cmd_reSeqPrint\n";
-	}
-}
-
-#################################################################
-# kentnf: subroutine						#
-#################################################################
 =head1 load_comparison
-
  load comparison and cultivar information to hash
-
 =cut
 sub load_comparison
 {
@@ -156,9 +165,7 @@ sub load_comparison
 }
 
 =head1 check_comparison
-
  check if the cultivars are consistent in comparison_file and input_list file
-
 =cut
 sub check_comparison
 {
@@ -187,10 +194,8 @@ sub check_comparison
 }
 
 =head1 check_genome
-
  check if the genome is indexed by bwa
  check if the genome is indexed by samtools faidx
-
 =cut
 sub check_genome
 {
@@ -223,9 +228,7 @@ sub check_genome
 }
 
 =head1 generate_pileup
-
  generate pileup command
-
 =cut
 sub generate_pileup
 {
@@ -330,43 +333,133 @@ sub generate_pileup
 	return %cmd_pileup;
 }
 
-sub pipeline
+=head2
+ filter_RNASeq
+=cut 
+sub filter_RNASeq
 {
-print qq'
-1. remove redundancy reads using removeRedundancy.pl
+	my ($input_file, $output_file) = @_;
 
-perl removeRedundancy.pl input > output
+	my $output_line = "type\tSNP\tchromosome\tposition\tRef base\ts1 coverage\ts1 base\ts2 coverage\ts2 base\n";
 
-2. align each sample to reference using bwa
+	my $fh = IO::File->new($input_file) || die $!;
+while(<>) {
+        chomp;
+        @a = split "\t";
+        $count1 = ($a[6] =~ tr/\^//);
+        $count1 += ($a[6] =~ tr/\$//);
+        $count2 = ($a[8] =~ tr/\^//);
+        $count2 += ($a[8] =~ tr/\$//);
+        $cov1 = $a[5] - $count1;
+        $cov2 = $a[7] - $count2;
+        $a[6] =~ tr/agctn/AGCTN/;
+        $a[6] =~ s/"//g;
+        $a[6] =~ s/\$//g;
+        $a[6] =~ s/\^://g;
+        $a[6] =~ s/\^F//g;
+        $a[6] =~ s/\^\d//g;
+        $a[6] =~ s/\^\)//g;
+        $a[6] =~ s/\.\+/\+/g;
+        $a[6] =~ s/\.\-/\-/g;
+        $a[6] =~ s/,\+/\+/g;
+        $a[6] =~ s/,\-/\-/g;
+        $a[6] = " ".$a[6];
+        $a[8] =~ tr/agctn/AGCTN/;
+        $a[8] =~ s/"//g;
+        $a[8] =~ s/\$//g;
+        $a[8] =~ s/\^://g;
+        $a[8] =~ s/\^F//g;
+        $a[8] =~ s/\^\d//g;
+        $a[8] =~ s/\^\)//g;
+        $a[8] =~ s/\.\+/\+/g;
+        $a[8] =~ s/\.\-/\-/g;
+        $a[8] =~ s/,\+/\+/g;
+        $a[8] =~ s/,\-/\-/g;
+        $a[1] =~ s/;//;
+        $a[6] =~ s/\*/\-/g;
+        $a[6] =~ s/,/\*/g;
+        $a[6] =~ s/\./\*/g;
+        $a[6] =~ s/\*/$a[4]/g;
+        $a[8] =~ s/\*/\-/g;
+        $a[8] =~ s/,/\*/g;
+        $a[8] =~ s/\./\*/g;
+        $a[8] =~ " ".$a[8];
+        $a[8] =~ s/\*/$a[4]/g;
+        if ($cov1 >= 4 && $cov2 >= 4) {
+                print join("\t", @a), "\n";
+        }
+}
 
-# bwa align for cezanne
-bwa aln -t 24 -n 0.02 -o 1 -e 2 -f sample1.sai reference.fa sample1.fa
-bwa samse reference.fa sample1.sai sample1.fa | filter_for_SEsnp.pl | samtools view -bS -o sample1.bam -
-samtools sort sample1.bam sample1_sort
 
-3. merge sorted bam files for each cultivar
-samtools merge -f cultivar_A.bam sample1_sort.bam sample2_sort.bam ...... sampleN_sort.bam
-
-4. generate pileup files for each cultivar
-samtools mpileup -q 16 -Q 0 -d 10000 -f reference.fa cultivar_A.bam > cultivar_A.pileup
-
-* choose one or more below step for next analysis.
-
-5. generate virtual genome using SNP.
-reSeqPrintSample.indel.fast.strAssign.RNAseq.table reference.fa cultivar_A.1col cultivar_A.pileup cultivar_A 3 3 0.3
-
-6. call SNPs between cultivar and reference
-pileupFilter.AtoG 0.9 0.8 3 cultivar_A.pileup
-
-7. call SNPs between two cultivars
-combine2PileFiles cultivar_A.pileup cultivar_B.pileup  0.9  0.8  ChrOrder  3
-
-* the ChrOrder is the Chr ID, one ID per line.
-
-';
 
 }
 
 
+
+
+
+
+
+
+
+
+sub pipeline
+{
+	print qq'
+===== A original SNP calling pipeline from Mao =====
+
+1. remove redundancy reads using removeRedundancy.pl
+   $ perl removeRedundancy.pl input > output
+
+2. align each sample to reference using bwa
+   $ bwa aln -t 24 -n 0.02 -o 1 -e 2 -f sample1.sai reference.fa sample1.fa
+   $ bwa samse reference.fa sample1.sai sample1.fa | filter_for_SEsnp.pl | samtools view -bS -o sample1.bam -
+   $ samtools sort sample1.bam sample1_sort
+
+3. merge sorted bam files for each cultivar
+   $ samtools merge -f cultivar_A.bam sample1_sort.bam sample2_sort.bam ...... sampleN_sort.bam
+
+4. generate pileup files for each cultivar
+   $ samtools mpileup -q 16 -Q 0 -d 10000 -f reference.fa cultivar_A.bam > cultivar_A.pileup
+
+* choose one or more below step for next analysis.
+
+5. generate virtual genome using SNP.
+   $ reSeqPrintSample.indel.fast.strAssign.RNAseq.table reference.fa cultivar_A.1col cultivar_A.pileup cultivar_A 3 3 0.3
+
+6. call SNPs between cultivar and reference
+   $ pileupFilter.AtoG 0.9 0.8 3 cultivar_A.pileup
+
+7. call SNPs between two cultivars
+   $ combine2PileFiles cultivar_A.pileup cultivar_B.pileup  0.9  0.8  ChrOrder  3
+
+* the ChrOrder is the Chr ID, one ID per line.
+
+===== B simple pipeline ===== 
+
+* notice, this script only generate command to run
+
+1. Prepare list file for pipeline
+
+    * list file format
+    cultivarA cultivarA_rep1.fa cultivarA_rep2.fa cultivarA_rep3.fa ... cultivarA_repN.fa
+    cultivarB cultivarB_rep1.fa cultivarB_rep2.fa cultivarB_rep3.fa ... cultivarB_repN.fa
+
+2. Prepare comparison file [option]
+
+    * list file for comparison
+    cultivarA cultivarB
+
+3. Run Mao SNP pipeline
+
+    $ SNPmTool.pl list_file  comparison_file > run_cmd.sh
+
+    Edit the run_cmd.sh file if required
+
+    ./run_cmd.sh
+
+';
+
+}
 
 
