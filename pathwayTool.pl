@@ -14,6 +14,83 @@ use strict;
 use warnings;
 use IO::File;
 
+=head2
+ pwy_filter: filter the pathway result for removing none-plant pathways
+=cut
+sub pwy_filter
+{
+	my $pathway_file = shift;
+
+	my $pathway_kept   = $pathway_file.".kept";
+	my $pathway_remove = $pathway_file.".remove";
+
+	open(OUT1, ">".$pathway_kept) || die $!;
+	open(OUT2, ">".$pathway_remove) || die $!;
+	open(FH, $pathway_file) || die $!;
+	while(<FH>)
+	{
+		chomp;
+		next if $_ =~ m/^#/;
+		my @a = split(/\t/, $_);
+		if ($a[3] =~ m/\s+\((.+?)\)$/)
+		{
+			my $cc = $1;
+			$cc =~ s/cytochrome c\) \(//;
+			if($cc eq 'yeast' || $cc eq 'prokaryotic' || $cc eq 'obligate autotrophs' || $cc eq 'Gram-negative bacteria' ||
+			   $cc eq 'Gram-positive bacteria' || $cc eq 'mammals' || $cc eq 'metazoan')
+			{
+				print OUT2 $_."\n";
+			}
+			else
+			{
+				print OUT1 $_."\n";
+			}
+		}
+		else
+		{
+			print OUT1 $_."\n";
+		}
+	}
+	close(FH);
+	close(OUT1);
+	close(OUT2);
+}
+
+
+=head2
+ pwy_uniq: uniq the pathway report file
+=cut
+sub pwy_uniq
+{
+	my ($pathway_file) = shift;
+	
+	my $usage = qq'
+USAGE: $0 -t unique pathway_file > uniq_pathway_file
+
+';
+
+	my %p;
+	my $fh = IO::File->new($pathway_file) || die $!;
+	while(<$fh>)
+	{
+        	chomp;
+	        # MIN031488       Zeaxanthin epoxidase, chloroplastic     PWY-5945        zeaxanthin, antheraxanthin and violaxanthin interconversion
+	        my @a = split(/\t/, $_);
+
+	        if (defined $p{$a[2]}{'num'} ) {
+	                $p{$a[2]}{'num'}++;
+	        } else {
+	                $p{$a[2]}{'num'} = 1;
+	        }
+
+	        $p{$a[2]}{'desc'} = $a[3];
+	}
+	$fh->close;
+
+	foreach my $id (sort keys %p) {
+        	print $id."\t".$p{$id}{'num'}."\t".$p{$id}{'desc'}."\n";
+	}
+}
 
 =head2 
  pwy_enrich: pathway enrichment analysis
