@@ -1,18 +1,27 @@
 #!/usr/bin/perl
 
-=head1
-
+=head
  pathwayTool.pl -- tools for pathway analysis
 
  author: Yi Zheng
+ 2014-11-20 convert this script to pathwayTool.pl 
  2014-06-20 fix error in p value calculate
  2014-04-09 init
-
 =cut
 
 use strict;
 use warnings;
 use IO::File;
+use Getopt::Std;
+
+my %options;
+getopts('a:b:c:d:e:f:g:i:j:k:l:m:n:o:p:q:r:s:t:u:v:w:x:y:z:h', \%options);
+unless (defined $options{'t'} ) { usage(); }
+
+if	($options{'t'} eq 'filter') { pwy_filter(@ARGV); }	# parse multi dataset
+elsif	($options{'t'} eq 'unique') { pwy_uniq(@ARGV); }	# parse multi dataset
+elsif	($options{'t'} eq 'enrich') { pwy_enrich(@ARGV); }
+else	{ usage(); }
 
 =head2
  pwy_filter: filter the pathway result for removing none-plant pathways
@@ -303,4 +312,27 @@ sub lFactorial {
     return $returnValue;
 }
 
+
+=head2
+ usage: show usage information
+=cut
+sub usage
+{
+	my $usage = qq'
+USAGE $0 -t [tool]
+
+	filter	filter the pathway result to remove non-plant pathways
+	unique	unique the pathway identified result
+	enrich	enrichemnt analysis for gene list
+
+Pipelines:
+	\$ pathwayTool.pl -t filter input_pathway(the input file is generate by ptools)
+	\$ pathwayTool.pl -t unique input_pathway.kept
+	\$ pathwayTool.pl -t enrich gene_list input_pathway.kept
+
+';
+
+	print $usage;
+	exit;
+}
 
