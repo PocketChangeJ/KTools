@@ -25,9 +25,7 @@ use FindBin;
 use IO::File;
 use Getopt::Long;
 
-
-
-
+my $debug = 1;
 
 sub snp_pipeline
 {
@@ -106,10 +104,17 @@ sampleNameA [tab] sampleNameB
 		{
 			my ($cultivarA, $cultivarB) = split(/\t/, $comparison);
 			my ($pileupA, $pileupB) = ($cultivarA.".pileup", $cultivarB.".pileup");
-			my $script = ${FindBin::RealBin}."/bin/combine2PileFiles";
+			my $script = ${FindBin::RealBin}."/bin/SNPmTool/combine2PileFiles";
 			my $cmd_combine2PileFiles = "$script $pileupA $pileupB 0.9 0.8 $chrOrder_file 3";
+
 			print $cmd_combine2PileFiles."\n";
-			#system($cmd_combine2PileFiles) && die "Error in command: $cmd_combine2PileFiles\n";
+			print "$0 -t ??? filter_rnaseq\n input output\n";
+			unless ($debug) {	
+				system($cmd_combine2PileFiles) && die "Error in command: $cmd_combine2PileFiles\n";
+				#(input_output)	
+			}
+
+
 		}
 	}
 
@@ -121,7 +126,7 @@ sampleNameA [tab] sampleNameB
 		foreach my $cultivar (sort keys %cmd_pileup)
 		{
 			my $pileup = $cultivar.".pileup";
-			my $script = ${FindBin::RealBin}."/bin/pileupFilter.AtoG";
+			my $script = ${FindBin::RealBin}."/bin/SNPmTool/pileupFilter.AtoG";
 			my $cmd_pileupFilter = "$script 0.9 0.8 3 $pileup";
 			print $cmd_pileupFilter."\n";
 			#system($cmd_pileupFilter) && die "Error in command: $cmd_pileupFilter\n";
@@ -137,7 +142,7 @@ sampleNameA [tab] sampleNameB
 		{
 			my $pileup = $cultivar.".pileup";
 			my $col = $cultivar.".1col";
-			my $script = ${FindBin::RealBin}."/bin/reSeqPrintSample.indel.fast.strAssign.RNAseq.table";
+			my $script = ${FindBin::RealBin}."/bin/SNPmao/reSeqPrintSample.indel.fast.strAssign.RNAseq.table";
 			my $cmd_reSeqPrint = "$script $genome $col $pileup $cultivar 3 3 0.3";
 			print $cmd_reSeqPrint."\n";
 			#system($cmd_reSeqPrint) && die "Error in command: $cmd_reSeqPrint\n";
@@ -260,6 +265,8 @@ sub generate_pileup
 			if ( scalar(@reads) == 2 )
 			{
 				my ($read1, $read2) = ($reads[0], $reads[1]);
+
+				# add remove redundancy;
 				my ($sai1, $sai2) = ($read1, $read2);
 
 				if ($sai1 =~ m/\.gz$/) {  $sai1 =~ s/\.gz$//; }
@@ -289,6 +296,8 @@ sub generate_pileup
 			elsif ( scalar(@reads) == 1 )
 			{
 				my $read = $a[$i];
+
+				# add remove redundancy;
 				my $sai = $read;
 				if ($sai =~ m/\.gz$/) {  $sai =~ s/\.gz$//; }
 
@@ -405,6 +414,51 @@ sub repace_pileup
 	$char =  " ".$char;		# for easy to import to excel
 	#$char =~ s/\*/$a[4]/g;		# replace the asterisk to reference base
 	return $char;
+}
+
+=head2
+ filter_indel: filter indel result by indel Depth (input_file, $output_file)
+=cut
+sub filter_indel
+{
+	my ($input_file, $output_file) = @_;
+	
+	my %base_count;
+        my $fh = IO::File->new($input_file) || die $!;
+        my $output_line = <$fh>; # titile
+        while(<$fh>)
+        {
+                chomp;
+                my @a = split(/\t/, $_);
+                $output_line.= $_."\n" and next if $a[0] eq 'M';
+                my ($c1, $b1, $c2, $b2) = ($a[5], $a[6], $a[7], $a[8]);
+                %base_count = ();
+                $base_count{$b1} = $c1;
+                $base_count{$b2} = $c2;
+                my $label = 'removed';
+                foreach my $base (sort keys %base_count) {
+                        my $count = $base_count{$base};
+                        my $count1 = $base =~ tr/+/+/;
+                        my $count2 = $base =~ tr/-/-/;
+                        if (($count1 / $count) >= 0.9 || ($count2 / $count) >= 0.9) {
+                                $label = 'keep';
+                        }
+                        #print $_."\t$count\t$count1\t$count2\t$label\n";
+                }
+                $output_line.= $_."\t".$label."\n";
+        }
+        $fh->close;
+
+	if ( $input_file ne $output_file ) {
+                my $out = IO::File->new(">$output_file") || die $!;
+                print $out $output_line;
+                $out->close;
+        } else {
+                my $out = IO::File->new(">temp.RNASeq.snp.filter.txt") || die $!;
+                print $out $output_line;
+                $out->close;
+                system("mv temp.RNASeq.snp.filter.txt $output_file");
+        }
 }
 
 =head2
