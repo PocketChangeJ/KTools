@@ -26,6 +26,9 @@ use IO::File;
 use Getopt::Long;
 
 
+
+
+
 sub snp_pipeline
 {
 	my ($options, $files) = @_;
@@ -334,7 +337,7 @@ sub generate_pileup
 }
 
 =head2
- filter_RNASeq
+ filter_RNASeq : filter SNP result from RNASeq (input_file, output_file)
 =cut 
 sub filter_RNASeq
 {
@@ -342,96 +345,100 @@ sub filter_RNASeq
 
 	my $output_line = "type\tSNP\tchromosome\tposition\tRef base\ts1 coverage\ts1 base\ts2 coverage\ts2 base\n";
 
+	my ($count1, $count2, $cov1, $cov2);
 	my $fh = IO::File->new($input_file) || die $!;
-while(<>) {
-        chomp;
-        @a = split "\t";
-        $count1 = ($a[6] =~ tr/\^//);
-        $count1 += ($a[6] =~ tr/\$//);
-        $count2 = ($a[8] =~ tr/\^//);
-        $count2 += ($a[8] =~ tr/\$//);
-        $cov1 = $a[5] - $count1;
-        $cov2 = $a[7] - $count2;
-        $a[6] =~ tr/agctn/AGCTN/;
-        $a[6] =~ s/"//g;
-        $a[6] =~ s/\$//g;
-        $a[6] =~ s/\^://g;
-        $a[6] =~ s/\^F//g;
-        $a[6] =~ s/\^\d//g;
-        $a[6] =~ s/\^\)//g;
-        $a[6] =~ s/\.\+/\+/g;
-        $a[6] =~ s/\.\-/\-/g;
-        $a[6] =~ s/,\+/\+/g;
-        $a[6] =~ s/,\-/\-/g;
-        $a[6] = " ".$a[6];
-        $a[8] =~ tr/agctn/AGCTN/;
-        $a[8] =~ s/"//g;
-        $a[8] =~ s/\$//g;
-        $a[8] =~ s/\^://g;
-        $a[8] =~ s/\^F//g;
-        $a[8] =~ s/\^\d//g;
-        $a[8] =~ s/\^\)//g;
-        $a[8] =~ s/\.\+/\+/g;
-        $a[8] =~ s/\.\-/\-/g;
-        $a[8] =~ s/,\+/\+/g;
-        $a[8] =~ s/,\-/\-/g;
-        $a[1] =~ s/;//;
-        $a[6] =~ s/\*/\-/g;
-        $a[6] =~ s/,/\*/g;
-        $a[6] =~ s/\./\*/g;
-        $a[6] =~ s/\*/$a[4]/g;
-        $a[8] =~ s/\*/\-/g;
-        $a[8] =~ s/,/\*/g;
-        $a[8] =~ s/\./\*/g;
-        $a[8] =~ " ".$a[8];
-        $a[8] =~ s/\*/$a[4]/g;
-        if ($cov1 >= 4 && $cov2 >= 4) {
-                print join("\t", @a), "\n";
-        }
+	while(<$fh>) {
+		chomp;
+		my @a = split "\t";
+
+		# remove SNP in read end
+		$count1 = ($a[6] =~ tr/\^//);
+		$count1 += ($a[6] =~ tr/\$//);
+		$count2 = ($a[8] =~ tr/\^//);
+ 		$count2 += ($a[8] =~ tr/\$//);
+		$cov1 = $a[5] - $count1;
+		$cov2 = $a[7] - $count2;
+
+		$a[1] =~ s/;//;
+	
+		$a[6] = repace_pileup($a[6]);
+		$a[8] = repace_pileup($a[8]);
+		$a[6] =~ s/\*/$a[4]/g;
+        	$a[8] =~ s/\*/$a[4]/g;
+
+        	if ($cov1 >= 4 && $cov2 >= 4) {
+                	$output_line .= join("\t", @a)."\n";
+        	}
+	}
+
+	if ( $input_file ne $output_file ) {
+		my $out = IO::File->new(">$output_file") || die $!;
+		print $out $output_line; 
+		$out->close;
+	} else {
+		my $out = IO::File->new(">temp.RNASeq.snp.filter.txt") || die $!;
+		print $out $output_line;
+		$out->close;
+		system("mv temp.RNASeq.snp.filter.txt $output_file");
+	}
+}
+=head2
+ repace_pileup: repace_pileup to ATCGN for mutation and -+ for indel
+=cut
+sub repace_pileup
+{
+	my $char = shift;
+	$char =~ tr/agctn/AGCTN/;	# format the mismatch for forward and reverse strand
+	$char =~ s/"//g;		# ?
+	$char =~ s/\$//g;		# remove the end symbol (why do not remove corresponding base)
+	$char =~ s/\^://g;		# ??? like remove start, but do not understand
+	$char =~ s/\^F//g;		#
+	$char =~ s/\^\d//g;		#
+	$char =~ s/\^\)//g;		#
+	$char =~ s/\.\+/\+/g;		# remove the match base before insertion and deletion 
+	$char =~ s/\.\-/\-/g;		#
+	$char =~ s/,\+/\+/g;		#
+	$char =~ s/,\-/\-/g;		# 
+	$char =~ s/\*/\-/g;		# ?????
+	$char =~ s/,/\*/g;		# replace the comma (match reverse) to asterisk
+	$char =~ s/\./\*/g;		# replace the dot (match forward) to asterisk
+	$char =  " ".$char;		# for easy to import to excel
+	#$char =~ s/\*/$a[4]/g;		# replace the asterisk to reference base
+	return $char;
 }
 
-
-
-}
-
-
-
-
-
-
-
-
-
-
+=head2
+ pipeline: show to to use this pipeline
+=cut
 sub pipeline
 {
 	print qq'
 ===== A original SNP calling pipeline from Mao =====
 
 1. remove redundancy reads using removeRedundancy.pl
-   $ perl removeRedundancy.pl input > output
+   \$ perl removeRedundancy.pl input > output
 
 2. align each sample to reference using bwa
-   $ bwa aln -t 24 -n 0.02 -o 1 -e 2 -f sample1.sai reference.fa sample1.fa
-   $ bwa samse reference.fa sample1.sai sample1.fa | filter_for_SEsnp.pl | samtools view -bS -o sample1.bam -
-   $ samtools sort sample1.bam sample1_sort
+   \$ bwa aln -t 24 -n 0.02 -o 1 -e 2 -f sample1.sai reference.fa sample1.fa
+   \$ bwa samse reference.fa sample1.sai sample1.fa | filter_for_SEsnp.pl | samtools view -bS -o sample1.bam -
+   \$ samtools sort sample1.bam sample1_sort
 
 3. merge sorted bam files for each cultivar
-   $ samtools merge -f cultivar_A.bam sample1_sort.bam sample2_sort.bam ...... sampleN_sort.bam
+   \$ samtools merge -f cultivar_A.bam sample1_sort.bam sample2_sort.bam ...... sampleN_sort.bam
 
 4. generate pileup files for each cultivar
-   $ samtools mpileup -q 16 -Q 0 -d 10000 -f reference.fa cultivar_A.bam > cultivar_A.pileup
+   \$ samtools mpileup -q 16 -Q 0 -d 10000 -f reference.fa cultivar_A.bam > cultivar_A.pileup
 
 * choose one or more below step for next analysis.
 
 5. generate virtual genome using SNP.
-   $ reSeqPrintSample.indel.fast.strAssign.RNAseq.table reference.fa cultivar_A.1col cultivar_A.pileup cultivar_A 3 3 0.3
+   \$ reSeqPrintSample.indel.fast.strAssign.RNAseq.table reference.fa cultivar_A.1col cultivar_A.pileup cultivar_A 3 3 0.3
 
 6. call SNPs between cultivar and reference
-   $ pileupFilter.AtoG 0.9 0.8 3 cultivar_A.pileup
+   \$ pileupFilter.AtoG 0.9 0.8 3 cultivar_A.pileup
 
 7. call SNPs between two cultivars
-   $ combine2PileFiles cultivar_A.pileup cultivar_B.pileup  0.9  0.8  ChrOrder  3
+   \$ combine2PileFiles cultivar_A.pileup cultivar_B.pileup  0.9  0.8  ChrOrder  3
 
 * the ChrOrder is the Chr ID, one ID per line.
 
@@ -452,14 +459,14 @@ sub pipeline
 
 3. Run Mao SNP pipeline
 
-    $ SNPmTool.pl list_file  comparison_file > run_cmd.sh
+    \$ SNPmTool.pl list_file  comparison_file > run_cmd.sh
 
     Edit the run_cmd.sh file if required
 
     ./run_cmd.sh
 
 ';
-
+	exit;
 }
 
 
