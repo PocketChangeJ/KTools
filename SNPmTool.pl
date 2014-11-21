@@ -33,7 +33,7 @@ getopts('a:b:c:d:e:f:g:i:j:k:l:m:n:o:p:q:r:s:t:u:v:w:x:y:z:h', \%options);
 unless (defined $options{'t'} ) { usage($version); }
 
 if      ($options{'t'} eq 'identify')	{ snp_pipeline(\%options, \@ARGV); }    # 
-elsif   ($options{'t'} eq 'filter1')	{ filter_RNAseq(@ARGV); }    		# 
+elsif   ($options{'t'} eq 'filter1')	{ filter_RNASeq(@ARGV); }    		# 
 elsif   ($options{'t'} eq 'filter2')	{ filter_indel(@ARGV); }    		# 
 elsif	($options{'t'} eq 'pipeline')	{ pipeline(); }
 else	{ usage($version); }
@@ -119,9 +119,14 @@ sampleNameA [tab] sampleNameB
 			my $cmd_combine2PileFiles = "$script $pileupA $pileupB 0.9 0.8 $chrOrder_file 3";
 
 			print $cmd_combine2PileFiles."\n";
-			print "$0 -t ??? filter_rnaseq\n input output\n";
+			my $snp_file = $pileupA."_".$pileupB.".snp";
+			my $snp_filter1 = $snp_file.".filter.txt";
+			my $snp_filter2 = $snp_file.".filter.indel.txt";
+			print "$0 -t filter1 $snp_file $snp_filter1\n";
+			print "$0 -t filter2 $snp_filter1 $snp_filter2\n";
+
 			unless ($debug) {	
-				system($cmd_combine2PileFiles) && die "Error in command: $cmd_combine2PileFiles\n";
+				#system($cmd_combine2PileFiles) && die "Error in command: $cmd_combine2PileFiles\n";
 				#(input_output)	
 			}
 
@@ -276,7 +281,7 @@ sub generate_pileup
 		for(my $i=1; $i<@a; $i++)
 		{
 			@reads = split(/,/, $a[$i]);
-			remove_dub($a[$i]);	# remove read duplication
+			remove_dup($a[$i]);	# remove read duplication
 
 			if ( scalar(@reads) == 2 )
 			{
@@ -304,7 +309,7 @@ sub generate_pileup
 			{
 				my $read = $a[$i];
 				my $file_prefix = remove_file_suffix($read);
-				($sai1, $bam, $sort, $sort_bam) = ($file_prefix.".sai", $file_prefix.".bam", $file_prefix."_sort", $file_prefix."_sort.bam");				
+				($sai, $bam, $sort, $sort_bam) = ($file_prefix.".sai", $file_prefix.".bam", $file_prefix."_sort", $file_prefix."_sort.bam");				
 
 				my $bwa_align_cmd = "bwa aln -t $cpu -n 0.02 -o 1 -e 2 -f $sai $genome $read";
 				$pileup_cmds.=$bwa_align_cmd."\n";
@@ -364,6 +369,18 @@ sub remove_file_suffix
 sub filter_RNASeq
 {
 	my ($input_file, $output_file) = @_;
+
+	my $usage = qq'
+USAGE: $0 -t filter1 input_file output_file
+
+* filter RNASeq SNP: 
+  1) the start and end base is not count
+  2) convert the pileup to simple format
+
+';
+
+	print $usage and exit unless defined $input_file;
+	print $usage and exit unless defined $output_file;
 
 	my $output_line = "type\tSNP\tchromosome\tposition\tRef base\ts1 coverage\ts1 base\ts2 coverage\ts2 base\n";
 
@@ -435,7 +452,16 @@ sub repace_pileup
 sub filter_indel
 {
 	my ($input_file, $output_file) = @_;
-	
+
+	my $usage = qq'
+USAGE: $0 -t filter2 input_file output_file
+
+* filter indel lower than 90% depth
+
+';	
+	print $usage and exit unless defined $input_file;
+	print $usage and exit unless defined $output_file;
+
 	my %base_count;
         my $fh = IO::File->new($input_file) || die $!;
         my $output_line = <$fh>; # titile
