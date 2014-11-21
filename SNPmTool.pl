@@ -22,9 +22,21 @@ use strict;
 use warnings;
 use FindBin;
 use IO::File;
-use Getopt::Long;
+use Getopt::Std;
 
 my $debug = 1;
+my $version = 0.1;
+
+my %options;
+getopts('a:b:c:d:e:f:g:i:j:k:l:m:n:o:p:q:r:s:t:u:v:w:x:y:z:h', \%options);
+
+unless (defined $options{'t'} ) { usage($version); }
+
+if      ($options{'t'} eq 'identify')	{ snp_pipeline(\%options, \@ARGV); }    # 
+elsif   ($options{'t'} eq 'filter1')	{ filter_RNAseq(@ARGV); }    		# 
+elsif   ($options{'t'} eq 'filter2')	{ filter_indel(@ARGV); }    		# 
+elsif	($options{'t'} eq 'pipeline')	{ pipeline(); }
+else	{ usage($version); }
 
 sub snp_pipeline
 {
@@ -475,7 +487,25 @@ sub remove_dup
 
 
 =head2
- pipeline: show to to use this pipeline
+ usage: show to to use this pipeline
+=cut
+sub usage
+{
+	my $version = shift;
+	my $usage = qq'
+USAGE: $0 -t [tool] [options] input file
+
+        identify  identify SNP from RNASeq
+       	filter1   filter RNASeq SNP result
+        filter2   filter RNASeq SNP indel
+
+';
+	print $usage;
+	exit;
+}
+
+=head2
+ pipeline: show how to use this pipeline
 =cut
 sub pipeline
 {
