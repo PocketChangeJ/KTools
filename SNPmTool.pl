@@ -11,7 +11,6 @@
  C script: Linyong Mao
  Filter SAM file: Honghe Sun
  perl script: Yi Zheng
-
  
  02/01/2014 parameter for remove multi-hit reads
  01/22/2014 fix bug for merge just one file, chrOrder 
@@ -242,6 +241,10 @@ sub generate_pileup
 {
 	my ($list_file, $genome, $cpu, $debug) = @_;
 
+
+	my $PE_filter = ${FindBin::RealBin}."/bin/SNPmao/filter_for_PEsnp.pl";
+	my $SE_filter = ${FindBin::RealBin}."/bin/SNPmao/filter_for_SEsnp.pl";
+
 	my %cmd_pileup;
 
 	my $fh = IO::File->new($list_file) || die "Can not open input file: $list_file $!\n";
@@ -257,35 +260,27 @@ sub generate_pileup
 		my @reads;
 
 		# perform bwa alignment, generate sam, convert bam, sort, put it to hash
-		my ($bam, $sort, $sort_bam);
+		my ($sai1, $sai2, $sai, $bam, $sort, $sort_bam);
 		for(my $i=1; $i<@a; $i++)
 		{
 			@reads = split(/,/, $a[$i]);
+			remove_dub($a[$i]);	# remove read duplication
 
 			if ( scalar(@reads) == 2 )
 			{
+
 				my ($read1, $read2) = ($reads[0], $reads[1]);
 
-				# add remove redundancy;
-				my ($sai1, $sai2) = ($read1, $read2);
-
-				if ($sai1 =~ m/\.gz$/) {  $sai1 =~ s/\.gz$//; }
-				if ($sai2 =~ m/\.gz$/) {  $sai2 =~ s/\.gz$//; } 		
-			
-				$bam = $sai1; $sort = $sai1;
-
-				$sai1 =~ s/\.fa$/\.sai/;
-				$sai2 =~ s/\.fa$/\.sai/;
-	                        $bam =~ s/\.fa$/\.bam/;
-        	                $sort =~ s/\.fa$/_sort/;
-                	        $sort_bam = $sort.".bam";
+				my $file_prefix1 = remove_file_suffix($read1);
+				my $file_prefix2 = remove_file_suffix($read2);
+				($sai1, $sai2, $bam, $sort, $sort_bam) = ($file_prefix1.".sai", $file_prefix2.".sai", $file_prefix1.".bam", $file_prefix1."_sort", $file_prefix1."_sort.bam");
 
 				my $bwa_align_cmd1 = "bwa aln -t $cpu -n 0.02 -o 1 -e 2 -f $sai1 $genome $read1";
 				my $bwa_align_cmd2 = "bwa aln -t $cpu -n 0.02 -o 1 -e 2 -f $sai2 $genome $read2";
 				$pileup_cmds.=$bwa_align_cmd1."\n";
 				$pileup_cmds.=$bwa_align_cmd2."\n";
 
-				my $bwa_sam_cmd = "bwa sampe $genome $sai1 $sai2 $read1 $read2 | filter_for_PEsnp.pl | samtools view -bS -o $bam -";
+				my $bwa_sam_cmd = "bwa sampe $genome $sai1 $sai2 $read1 $read2 | $PE_filter | samtools view -bS -o $bam -";
 				$pileup_cmds.=$bwa_sam_cmd."\n";
 
 				my $sort_cmd = "samtools sort $bam $sort";
@@ -296,21 +291,13 @@ sub generate_pileup
 			elsif ( scalar(@reads) == 1 )
 			{
 				my $read = $a[$i];
+				my $file_prefix = remove_file_suffix($read);
+				($sai1, $bam, $sort, $sort_bam) = ($file_prefix.".sai", $file_prefix.".bam", $file_prefix."_sort", $file_prefix."_sort.bam");				
 
-				# add remove redundancy;
-				my $sai = $read;
-				if ($sai =~ m/\.gz$/) {  $sai =~ s/\.gz$//; }
-
-				my ($bam, $sort) = ($sai, $sai);
-
-				$sai =~ s/\.fa$/\.sai/;
-				$bam =~ s/\.fa$/\.bam/;
-				$sort =~ s/\.fa$/_sort/;
-				$sort_bam = $sort.".bam";
 				my $bwa_align_cmd = "bwa aln -t $cpu -n 0.02 -o 1 -e 2 -f $sai $genome $read";
 				$pileup_cmds.=$bwa_align_cmd."\n";
 			
-				my $bwa_sam_cmd = "bwa samse $genome $sai $read | filter_for_SEsnp.pl | samtools view -bS -o $bam -";
+				my $bwa_sam_cmd = "bwa samse $genome $sai $read | $SE_filter | samtools view -bS -o $bam -";
 				$pileup_cmds.=$bwa_sam_cmd."\n";
 			
 				my $sort_cmd = "samtools sort $bam $sort";
@@ -343,6 +330,20 @@ sub generate_pileup
 	$fh->close;
 
 	return %cmd_pileup;
+}
+
+=head2
+ remove_file_suffix -- remove fq fastq fa fasta gz
+=cut
+sub remove_file_suffix
+{
+	my $file_name = shift;
+	$file_name =~ s/\.gz$//;
+	$file_name =~ s/\.fastq//;
+	$file_name =~ s/\.fq//;
+	$file_name =~ s/\.fasta//;
+	$file_name =~ s/\.fa//;
+	return $file_name;
 }
 
 =head2
@@ -460,6 +461,18 @@ sub filter_indel
                 system("mv temp.RNASeq.snp.filter.txt $output_file");
         }
 }
+
+=head2
+ remove duplication for read
+=cut
+sub remove_dup
+{
+	my $seq_files = shift;  # format, sample.fastq (single-end); sample_R1.fastq,sample_R2.fastq (paired-end)
+	my $script = ${FindBin::RealBin}."/bin/SNPmao/removeRedundancy.pl";
+	print "perl $script $seq_files\n";	
+}
+
+
 
 =head2
  pipeline: show to to use this pipeline
