@@ -1,5 +1,10 @@
 #!/usr/bin/perl
 
+=head
+ GOtool.pl -- tools for GO analysis
+ Yi Zheng
+=cut
+
 use strict;
 use warnings;
 use diagnostics;
@@ -16,7 +21,6 @@ use GO::TermFinderReport::Text;
 use GO::Utils::File    qw (GenesFromFile);
 use GO::Utils::General qw (CategorizeGenes);
 use Getopt::Long;
-
 
 my ($help, $annotationFile, $totalNum, $oboFile, $listFile, $pvalue_cutoff, $correction, $image_switch);
 $correction = 'FDR';
@@ -39,22 +43,21 @@ GetOptions (
 =cut
 sub go_link_gene
 {
-my $usage =  qq'
-perl $0 gene_blast parsed_go_mapping_file removed_go_term[option] > output
+	my ($options, $files) = @_;
+	my $usage =  qq'
+USAGE $0 -t link -m parsed_go_mapping_file -r removed_go_term[option]  parsed_gene_blast_table > output
 
-* 1. format of gene_blast file
-* 2. one gene_ID will have more hit_ID, one result per line
-* 3. including all gene_ID from blast results, if one gene 
-* do not have blast result, it will print "GeneID \\t NA"
-gene_ID \\t hit_ID
+* 1. format of parsed_gene_blast table
+gene_ID1 [tab] hit_ID1
+gene_ID1 [tab] hit_ID2
+gene_ID2 [tab] NA
 
-* format of parse_go_mapping_file;
-* the hit ID may have no corresponding GO ID
-hit_ID \\t GO_ID1 \\t GO_ID2 ... GO_IDN
+* 2. format of parse_go_mapping_file, the hit ID may have no corresponding GO ID
+hit_ID [tab] GO_ID1 [tab] GO_ID2 ... GO_IDN
+hit_ID \\n 
 
-* format of ouput files, if gene do not have GO ID, the only 
-* gene ID will be prinit at the end
-gene_ID \\t GO_ID1 # GO_ID2 # ... # GO_IDN
+* 3. format of ouput files, if gene do not have GO ID, the gene ID still be prinit at the end
+gene_ID [tab] GO_ID1 # GO_ID2 # ... # GO_IDN
 gene_ID \\n
 
 This script will use a default list of removed GO term if user 
@@ -63,144 +66,116 @@ Some GO terms are not related to plant species, and they should
 be removed from gene GO table;
 
 ';
+	print $usage and exit unless $$files[0];
+	my $input_gene_blast = $$files[0];
+	print "[ERR]no file $input_gene_blast\n" and exit unless -s $input_gene_blast;
 
-my $input_gene_blast = shift || die $usage;
-my $parsed_go_mapping = shift;
-my $removed_go_term = shift;
+	# set default mapping file
+	my $parsed_go_mapping = ${FindBin::RealBin}."/database/GO/uniport_idmapping_GO_07242013";
+	$parsed_go_mapping = $$options{'m'} if defined $$options{'m'};
+	print "[ERR]no file $parsed_go_mapping\n" and exit unless -s $parsed_go_mapping;
 
-# set default mapping file
-unless ($parsed_go_mapping) {
-	$parsed_go_mapping = "$FindBin::RealBin/mapping/uniport_idmapping_GO_07242013";
-}
-die "Can not find go mapping file: $parsed_go_mapping\n" unless -s $parsed_go_mapping;
+	# set default removed go term for plant
+	my $removed_go_term = ${FindBin::RealBin}."/database/GO/non_plant_GO";
+	$removed_go_term = $$options{'r'} if defined $$options{'r'};
+	print "[ERR]no file $removed_go_term\n" and exit unless -s $removed_go_term;
 
-# set default removed go term
-unless ($removed_go_term) {
-	$removed_go_term = "$FindBin::RealBin/bin/non_plant_GO";
-	die "Can not find removed go term: $removed_go_term" unless -s $removed_go_term;
-}
-
-my %removed_go;
-my $fhr = IO::File->new($removed_go_term) || die $!;
-while(<$fhr>){
-	chomp;
-	next if $_ =~ m/^#/;
-	my @a = split(/\t/, $_);
-	$removed_go{$a[0]} = 1;
-}
-$fhr->close;
-#print scalar(keys %removed_go), " of removed none-plant related GO\n";
-
-# save hit id and GO to hash
-# key: hit_id
-# value: GO_ID
-# * if one hit do not have GO ID, will not put it to hash
-my $nn = 0;
-my %hit_GO;
-my $fh1;
-if ($parsed_go_mapping =~ m/\.gz/)
-{
-        open($fh1, "<:gzip", $parsed_go_mapping) || die $!;
-}
-else
-{
-        open($fh1, $parsed_go_mapping) || die $!;
-}
-
-while(<$fh1>)
-{
-	chomp;
-	my @a = split(/\t/, $_);
-
-	my $hit_id = $a[0];
-
-	my $go_id = "";
-	for(my $i=1; $i<@a; $i++)
-	{
-		unless ( defined $removed_go{$a[$i]} ) {
-			if ($a[$i] =~ m/GO:/) { $go_id.="\t".$a[$i]; }
-		} else {
-			$nn++;
-		}
+	# load remove GO ID to hash
+	my %removed_go; # key: GOID
+	my $fhr = IO::File->new($removed_go_term) || die $!;
+	while(<$fhr>){
+		chomp;
+		next if $_ =~ m/^#/;
+		my @a = split(/\t/, $_);
+		$removed_go{$a[0]} = 1;
 	}
-	$go_id =~ s/^\t//;
+	$fhr->close;
+	#print scalar(keys %removed_go), " of removed none-plant related GO\n";
 
-	if ($go_id =~ m/GO:/)
+	# save hit id and GO to hash
+	# key: hit_id
+	# value: GO_ID
+	# * if one hit do not have GO ID, will not put it to hash
+	my $nn = 0; # number of removed GO
+	my %hit_GO;
+	my $fh1;
+	if ($parsed_go_mapping =~ m/\.gz/) {
+        	open($fh1, "gunczip -c $parsed_go_mapping |") || die $!;
+	} else {
+        	open($fh1, $parsed_go_mapping) || die $!;
+	}
+
+	while(<$fh1>)
 	{
-		if (defined $hit_GO{$hit_id})
-		{
-			$hit_GO{$hit_id}.= "\t".$go_id;
+		chomp;
+		next if $_ =~ m/^#/;
+		my @a = split(/\t/, $_);
+		my $hit_id = $a[0];
+
+		my @filtered_GO = ();
+		for(my $i=1; $i<@a; $i++) {
+			next unless $a[$i] =~ m/GO:/;		# filter members not GO ID
+			next and $nn++ if defined $removed_go{$a[$i]};	# remove GO ID;
+			push(@filtered_GO, $a[$i]);
 		}
-		else
-		{
+
+		if (defined $hit_GO{$hit_id}) {
+			$hit_GO{$hit_id}.= "\t".$go_id;
+		} else {
 			$hit_GO{$hit_id} = $go_id;	
 		}
 	}
-}
-$fh1->close;
+	$fh1->close;
+	print "[REP]hit GO load from $parsed_go_mapping: ".scalar(keys(%hit_go))."\n";
+	print "[REP]$nn of GO has been removed by non-plant_GO term\n";
 
-#print "$nn of GO has been removed by non-plant_GO term\n";
+	# gene go id for each genes
+	# key: gene_ID
+	# value: GO_ID
+	#
+	# hash for all gene in blast result, if gene do not have blast hit ID, it will print NA behind geneID,
+	# key: gene_ID
+	# value: 1
+	my %gene_GO; my %gene_id;
+	my $fh2;
 
-# gene go id for each genes
-# key: gene_ID
-# value: GO_ID
-#
-# hash for all gene in blast result, if gene do not have blast hit ID, it will print NA behind geneID,
-# key: gene_ID
-# value: 1
-my %gene_GO; my %gene_id;
-my $fh2;
-if ($input_gene_blast =~ m/\.gz/) 
-{
-	open($fh2, "<:gzip", $input_gene_blast) || die $!;
-}
-else 
-{
-	open($fh2, $input_gene_blast) || die $!;
-}
-
-while(<$fh2>)
-{
-	chomp;
-	# gene_ID \t hit_ID
-	my @a = split(/\t/, $_);
-
-	if ($a[1] =~ m/tr\|/) {
-		my @b = split(/\|/, $a[1]);
-		$a[1] = $b[1];
-	}
-
-	#print "$_\t$a[1]\n";
-
-	if (defined $hit_GO{$a[1]})
+	my $fh2 = IO::File->new($input_gene_blast) || die $!;
+	while(<$fh2>)
 	{
-		if ( defined $gene_GO{$a[0]} )
-		{
-			$gene_GO{$a[0]}.= "\t".$hit_GO{$a[1]};
+		chomp;
+		next if $_ =~ m/^#/;
+		# gene_ID \t hit_ID
+		my @a = split(/\t/, $_);
+
+		if ($a[1] =~ m/tr\|/) {
+			my @b = split(/\|/, $a[1]);
+			$a[1] = $b[1];
 		}
-		else
-		{
-			$gene_GO{$a[0]} = $hit_GO{$a[1]};
+		# print "$_\t$a[1]\n";
+
+		if (defined $hit_GO{$a[1]}) {
+			if ( defined $gene_GO{$a[0]} ) {
+				$gene_GO{$a[0]}.= "\t".$hit_GO{$a[1]};
+			} else {
+				$gene_GO{$a[0]} = $hit_GO{$a[1]};
+			}
 		}
+
+		$gene_id{$a[0]} = 1;
+	}
+	$fh1->close;
+
+	# output result 
+	foreach my $gid (sort keys %gene_GO) {
+		my $go_terms = $gene_GO{$gid};
+		$go_terms =~ s/\t/#/ig;
+		print $gid."\t".$go_terms."\n";
+		delete $gene_id{$gid};
 	}
 
-	$gene_id{$a[0]} = 1;
-}
-$fh1->close;
-
-# output result 
-foreach my $gid (sort keys %gene_GO) 
-{
-	my $go_terms = $gene_GO{$gid};
-	$go_terms =~ s/\t/#/ig;
-	print $gid."\t".$go_terms."\n";
-	delete $gene_id{$gid};
-}
-
-foreach my $gid ( sort keys %gene_id)
-{
-	print $gid."\n";
-}	
+	foreach my $gid ( sort keys %gene_id) {
+		print $gid."\n";
+	}	
 }
 
 =head2
