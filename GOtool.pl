@@ -183,14 +183,16 @@ be removed from gene GO table;
 =cut
 sub go_associate
 {
+	my ($options, $files) = @_;
+
 	my $usage  = qq'
-USAGE : perl $0 
-		-i input_file
-		-o organism[default:Prometheus]
-		-e gene_ontology_edit.obo[default: RealBin/bin/gene_ontology_edit.obo]
+USAGE : perl $0 -t associate [options] input_file
+	
+	-o organism[default:Prometheus]
+	-e gene_ontology_edit.obo[default: database/GO/gene_ontology_edit.obo]
 
 * input_file : all gene and corresponding GO information, format:
-  geneID \\t GOID#GOID#..#GOID \\n
+  geneID [tab] GOID#GOID#..#GOID \\n
 
 * the output file should named as:
   Prometheus_gene_GO
@@ -198,166 +200,43 @@ USAGE : perl $0
 
 ';
 
-my ($input_gene_GO_file, $organism, $gene_ontology_file);
-$gene_ontology_file 	= ${FindBin::RealBin}."/bin/gene_ontology_edit.obo";
-$organism		= "Prometheus";
+	print $usage and exit unless defined $$files[0];
+	my $input_gene_GO_file = $$files[0];
+	print "[ERR]no file: $input_gene_GO_file\n" and exit unless -s $input_gene_GO_file;
 
-GetOptions(
-	"i=s" => \$input_gene_GO_file,
-	"o=s" => \$organism,
-	"e=s" => \$gene_ontology_file
-);
+	my $gene_ontology_file 	= ${FindBin::RealBin}."/database/GP/gene_ontology_edit.obo";
+	$gene_ontology_file = $$options{'e'} if defined $$options{'e'}
+	print "[ERR]no file: $input_gene_GO_file\n" and exit unless -s $input_gene_GO_file;
 
-die $usage unless defined $input_gene_GO_file;
-die "Error, in gene_ontology_edit.obo file\n" unless (-s $gene_ontology_file);
-die "Error, the output file exist\n" if (-s $organism."_associate_file" || -s $organism."_gene_GO");
+	my $organism = "Prometheus";
+	$organism  = $$options{'o'} if defined $$options{'o'};
+	print "[ERR]no file: $input_gene_GO_file\n" and exit unless -s $input_gene_GO_file;
 
-#################################################################
-# main								#
-#################################################################
+	# load gene and corresponding GO annotation to hash, then uniq them
+	# key: geneID
+	# value: GO_ID # GO_ID ... GO_ID # the GO_ID is uniq for each geneID
+	my %gene_GO = load_gene_GO($input_gene_GO_file);
+	print "[REP]".scalar(keys(%gene_GO))." gene with annotation were loaded $!\n";
 
-# load gene and corresponding GO annotation to hash, then uniq them
-# key: geneID
-# value: GO_ID # GO_ID ... GO_ID # the GO_ID is uniq for each geneID
-my %gene_GO = load_gene_GO($input_gene_GO_file);
+	# load GO_cat info to hash from gene_ontology_edit.obo file
+	# key: GO_ID
+	# value: P or F or C
+	my %GO_cat = load_cat_GO($gene_ontology_file);
+	print "[REP]".scalar(keys(%GO_cat))." number of GO and namespace were loaded into hash\n";
 
-# report
-print scalar(keys(%gene_GO))." gene with annotation were loaded $!\n";
+	#########################################################################
+	# Produce gene_GO files and temp3 file
+	# temp3: File for produce Go_asso_file next step 
+	# gene_GO: unigene id and go id
+	#########################################################################
+	my $output_gene_GO = $organism."_gene_GO";
+	my $out1 = IO::File->new(">".$output_gene_GO) || die "Can not open gene and GO file $output_gene_GO $!\n";
 
-# check error
-#foreach my $k (sort keys %gene_GO) { print $k."\t".$gene_GO{$k}."\n"; } die;
-sub load_gene_GO
-{
-	my $input_gene_GO_file = shift;
-	my %gene_GO;
-	my $fh = IO::File->new($input_gene_GO_file) || die "Can not open input gene and GO file: $input_gene_GO_file $!\n";
-	while(<$fh>)
-	{
-		chomp;
-		my @a = split(/\t/, $_);
-		##my @b = split(/#/, $a[1]);
-		if (defined $gene_GO{$a[0]} ) {
-			$gene_GO{$a[0]}.= "#".$a[1];
-		} else {
-			$gene_GO{$a[0]} = $a[1];
-		}
-	}
-	$fh->close;
+	my @temp_gene_with_GO;
 
-	my %uniq_gene_GO;
 	foreach my $gid (sort keys %gene_GO)
 	{
-		if ($gene_GO{$gid})
-		{
-			my @a = split(/#/, $gene_GO{$gid});
-			my %uniq_GO = (); foreach my $a (@a) { $uniq_GO{$a} = 1; }
-			my $value = join("#", keys(%uniq_GO));
-			$uniq_gene_GO{$gid} = $value;
-		} 
-		else
-		{
-			$uniq_gene_GO{$gid} = 1;
-		}
-	}
-
-	return %uniq_gene_GO;
-}
-
-# load GO_cat info to hash from gene_ontology_edit.obo file
-# key: GO_ID
-# value: P or F or C
-my %GO_cat = load_cat_GO($gene_ontology_file);
-
-# report
-print scalar(keys(%GO_cat))." number of GO and namespace were loaded into hash\n";
-
-# check result
-# foreach my $k (sort keys %GO_cat) { print $k."\t".$GO_cat{$k}."\n"; } die;
-
-sub load_cat_GO
-{
-	my $gene_ontology_file = shift;
-
-	my ($id, $namespace, $alt_id, $is_obsolete);
-
-	my $tmp = IO::File->new(">TTTEEEMMMPPP") || die "Can not open temp file TTTEEEMMMPPP $!\n";
-	my $fh = IO::File->new($gene_ontology_file) || die "Can not ontology file $gene_ontology_file $!\n";
-	while(<$fh>)
-	{
-		chomp;
-		print $tmp "\n$_" if /^id: GO/;
-		print $tmp "\t$_" if /^namespace/;
-		print $tmp "\t$_" if /^alt_id/;
-		print $tmp "\t$_" if /^is_obsolete/;
-	}
-	$fh->close;
-	$tmp->close;
-
-	my %cat = ("biological_process" => "P", "molecular_function" => "F", "cellular_component" => "C");
-
-	my %GO_cat;
-
-	$tmp = IO::File->new("TTTEEEMMMPPP") || die "Can not open temp file TTTEEEMMMPPP $!\n";
-	<$tmp>;
-	while(<$tmp>)
-	{
-        	chomp;
-        	my @a = split(/\t/, $_);
-
-		die "Error in GO ID format: $a[0]\n" unless $a[0] =~ m/id: /;
-		die "Error in GO namespace format: $a[1]\n" unless $a[1] =~ m/namespace: /;
-        	$a[0] =~ s/id: //; 
-		$a[1] =~ s/namespace: //;
-
-        	if ($_ = m/is_obsolete/)
-        	{
-                	$GO_cat{$a[0]} = "obsolete";
-
-                	for (my $i = 2; $i < scalar(@a); $i++)
-                	{
-                        	if ($a[$i] =~ /alt_id/)
-                        	{
-                                	$a[$i] =~ s/alt_id: //;
-                                	$GO_cat{$a[$i]} = "obsolete";
-                        	}
-                	}
-        	}
-        	else
-        	{
-			die "Error, can not identify namespace for $a[0] : $a[1]\n" unless defined $cat{$a[1]};
-                	$GO_cat{$a[0]} = "$a[0]//$cat{$a[1]}";
-                	for (my $i = 2; $i < scalar(@a); $i++)
-                	{
-                        	if ($a[$i] =~ /alt_id/)
-                        	{
-                                	$a[$i] =~ s/alt_id: //;
-                                	$GO_cat{$a[$i]} = "$a[0]//$cat{$a[1]}";
-                        	}
-                	}
-        	}
-	}
-	$tmp->close;
-
-	unlink("TTTEEEMMMPPP");
-
-	return %GO_cat;
-}
-
-
-#########################################################################
-# Produce gene_GO files and temp3 file
-# temp3: File for produce Go_asso_file next step 
-# gene_GO: unigene id and go id
-#########################################################################
-
-my $output_gene_GO = $organism."_gene_GO";
-my $out1 = IO::File->new(">".$output_gene_GO) || die "Can not open gene and GO file $output_gene_GO $!\n";
-
-my @temp_gene_with_GO;
-
-foreach my $gid (sort keys %gene_GO)
-{
-	# skip gene without GO annotation
+		# skip gene without GO annotation
 	if ($gene_GO{$gid} eq "1") { next; }
 
   	my @go_member = split(/#/, $gene_GO{$gid});
@@ -409,88 +288,202 @@ foreach my $gid (sort keys %gene_GO)
 		$value =~ s/^#//ig;
 		push(@temp_gene_with_GO, "$gid\t$value");
         }
-}
-$out1->close;
 
-print "No. of gene has GO information: ", scalar(@temp_gene_with_GO), "\n";
+	}
+	$out1->close;
 
-#################################################################
-# Produce GO_associate_file					#
-# the file content is below.					#	
-# Description:							#
-# 	1. For every unigene, it must have 3 main cat		#
-# 	2. Except 1 GOID, it has it's own GOID			#
-#################################################################
+	print "[REP]No. of gene has GO information: ", scalar(@temp_gene_with_GO), "\n";
 
-# generate date
-my ($day, $mon, $year) = (localtime)[3..5];
-my $date = sprintf "%04d-%02d-%02d", 1900+$year, 1+$mon, $day;
+	#################################################################
+	# Produce GO_associate_file					#
+	# the file content is below.					#	
+	# Description:							#
+	# 	1. For every unigene, it must have 3 main cat		#
+	# 	2. Except 1 GOID, it has it's own GOID			#
+	#################################################################
 
+	# generate date
+	my ($day, $mon, $year) = (localtime)[3..5];
+	my $date = sprintf "%04d-%02d-%02d", 1900+$year, 1+$mon, $day;
 
-# record how many gene has GO annotation;
-# key: geneID
-# value: 1
-my %exist = ();
+	# record how many gene has GO annotation;
+	# key: geneID
+	# value: 1
+	my %exist = ();
 
-my $output_associate_file = $organism."_associate_file";
-my $out2 = IO::File->new(">".$output_associate_file) || die "Can not open output associate file $output_associate_file $!\n";
+	my $output_associate_file = $organism."_associate_file";
+	my $out2 = IO::File->new(">".$output_associate_file) || die "Can not open output associate file $output_associate_file $!\n";
 
-foreach my $t (@temp_gene_with_GO)
-{
-	# make every unigene have 3 main cat and GO ID
-	chomp($t);
-	my @a = split(/\t/, $t);
-	$exist{$a[0]} = 1;
-
-	# add complementary category information to each gene,
-	# for example: 
-	# if geneA just has a GO that belong to F, we will add GO:0008150 and GO:0005575 on it in GO_associate_file
-  	if ($a[1] !~ /F/)
-	{ print $out2 "$organism\t$a[0]\t\t\tGO:0003674\tUniProt\tIEA\t\tF\t$a[0]\t\tgene\tTaxon:0000\t$date\tKNF\n";  }
-	if ($a[1] !~ /P/)
-  	{ print $out2 "$organism\t$a[0]\t\t\tGO:0008150\tUniProt\tIEA\t\tP\t$a[0]\t\tgene\tTaxon:0000\t$date\tKNF\n"; }
-	if ($a[1] !~ /C/)
-	{ print $out2 "$organism\t$a[0]\t\t\tGO:0005575\tUniProt\tIEA\t\tC\t$a[0]\t\tgene\tTaxon:0000\t$date\tKNF\n"; }
-
- 	#print it's own GO ID
-	my @go_member = split("#", $a[1]);
-	for (my $i = 0; $i < @go_member; $i++)
+	foreach my $t (@temp_gene_with_GO)
 	{
-		if ($go_member[$i] =~ m/GO/)
- 		{
-			die "Error in format of GO info: $go_member[$i]\n" unless $go_member[$i] =~ m/\/\//;
-      			$go_member[$i] =~ s/\/\//#/;
-			my ($go_id, $go_cat) = split("#", $go_member[$i]);
-			die "Error in format of GO info: $go_id, $go_cat\n" unless ($go_id && $go_cat);
-      			print $out2 "$organism\t$a[0]\t\t\t$go_id\tUniProt\tIEA\t\t$go_cat\t$a[0]\t\tgene\tTaxon:0000\t$date\tKNF\n";
-    		}
-		else
+		# make every unigene have 3 main cat and GO ID
+		chomp($t);
+		my @a = split(/\t/, $t);
+		$exist{$a[0]} = 1;
+
+		# add complementary category information to each gene,
+		# for example: 
+		# if geneA just has a GO that belong to F, we will add GO:0008150 and GO:0005575 on it in GO_associate_file
+  		if ($a[1] !~ /F/)
+		{ print $out2 "$organism\t$a[0]\t\t\tGO:0003674\tUniProt\tIEA\t\tF\t$a[0]\t\tgene\tTaxon:0000\t$date\tKNF\n";  }
+		if ($a[1] !~ /P/)
+  		{ print $out2 "$organism\t$a[0]\t\t\tGO:0008150\tUniProt\tIEA\t\tP\t$a[0]\t\tgene\tTaxon:0000\t$date\tKNF\n"; }
+		if ($a[1] !~ /C/)
+		{ print $out2 "$organism\t$a[0]\t\t\tGO:0005575\tUniProt\tIEA\t\tC\t$a[0]\t\tgene\tTaxon:0000\t$date\tKNF\n"; }
+
+ 		#print it's own GO ID
+		my @go_member = split("#", $a[1]);
+		for (my $i = 0; $i < @go_member; $i++)
 		{
-			die "Error in line $t\nIt has incorrect GO information";
-		}
-  	}
+			if ($go_member[$i] =~ m/GO/)
+ 			{
+				die "Error in format of GO info: $go_member[$i]\n" unless $go_member[$i] =~ m/\/\//;
+	      			$go_member[$i] =~ s/\/\//#/;
+				my ($go_id, $go_cat) = split("#", $go_member[$i]);
+				die "Error in format of GO info: $go_id, $go_cat\n" unless ($go_id && $go_cat);
+      				print $out2 "$organism\t$a[0]\t\t\t$go_id\tUniProt\tIEA\t\t$go_cat\t$a[0]\t\tgene\tTaxon:0000\t$date\tKNF\n";
+	    		}
+			else
+			{
+				die "Error in line $t\nIt has incorrect GO information";
+			}
+	  	}
+	}
+	print scalar(keys(%exist))." gene has GO annotation\n";
+
+	# produce three main cat for each unigene:
+	# ID file have all unigene id;  hash %exist ids that have content; so !$exist is the left ids;
+	my $un_go_num = 0;
+
+	foreach my $gid (sort keys %gene_GO)
+	{
+		if (!$exist{$gid})
+  		{
+    			print $out2 "$organism\t$gid\t\t\tGO:0003674\tUniProt\tIEA\t\tF\t$gid\t\tgene\tTaxon:0000\t$date\tKNF\n";
+	    		print $out2 "$organism\t$gid\t\t\tGO:0008150\tUniProt\tIEA\t\tP\t$gid\t\tgene\tTaxon:0000\t$date\tKNF\n";
+	    		print $out2 "$organism\t$gid\t\t\tGO:0005575\tUniProt\tIEA\t\tC\t$gid\t\tgene\tTaxon:0000\t$date\tKNF\n";
+			$un_go_num++;
+	  	}
+
+	}
+	print "$un_go_num gene do not have GO annotation\n";
+
+	$out2->close;
 }
-print scalar(keys(%exist))." gene has GO annotation\n";
 
-#produce three main cat for each unigene:
-#ID file have all unigene id;  hash %exist ids that have content; so !$exist is the left ids;
-my $un_go_num = 0;
-
-foreach my $gid (sort keys %gene_GO)
+=head2
+ load_gene_go
+=cut
+sub load_gene_GO
 {
-	if (!$exist{$gid})
-  	{
-    		print $out2 "$organism\t$gid\t\t\tGO:0003674\tUniProt\tIEA\t\tF\t$gid\t\tgene\tTaxon:0000\t$date\tKNF\n";
-    		print $out2 "$organism\t$gid\t\t\tGO:0008150\tUniProt\tIEA\t\tP\t$gid\t\tgene\tTaxon:0000\t$date\tKNF\n";
-    		print $out2 "$organism\t$gid\t\t\tGO:0005575\tUniProt\tIEA\t\tC\t$gid\t\tgene\tTaxon:0000\t$date\tKNF\n";
-		$un_go_num++;
-  	}
+        my $input_gene_GO_file = shift;
+        my %gene_GO;
+        my $fh = IO::File->new($input_gene_GO_file) || die "Can not open input gene and GO file: $input_gene_GO_file $!\n";
+        while(<$fh>)
+        {
+                chomp;
+                my @a = split(/\t/, $_);
+		# it works for combination (cat) of several gene go files
+                if (defined $gene_GO{$a[0]} ) {
+                        $gene_GO{$a[0]}.= "#".$a[1];
+                } else {
+                        $gene_GO{$a[0]} = $a[1];
+                }
+        }
+        $fh->close;
 
-}
-print "$un_go_num gene do not have GO annotation\n";
+        my %uniq_gene_GO;
+        foreach my $gid (sort keys %gene_GO)
+        {
+                if ($gene_GO{$gid})
+                {
+                        my @a = split(/#/, $gene_GO{$gid});
+                        my %uniq_GO = (); foreach my $a (@a) { $uniq_GO{$a} = 1; }
+                        my $value = join("#", keys(%uniq_GO));
+                        $uniq_gene_GO{$gid} = $value;
+                }
+                else
+                {
+                        $uniq_gene_GO{$gid} = 1;
+                }
+        }
 
-$out2->close;
+        return %uniq_gene_GO;
 }
+
+=head2
+ load_cat_go: load gene category (PFC) to hash
+=cut
+sub load_cat_GO
+{
+        my $gene_ontology_file = shift;
+
+        my ($id, $namespace, $alt_id, $is_obsolete);
+
+        my $tmp = IO::File->new(">TTTEEEMMMPPP") || die "Can not open temp file TTTEEEMMMPPP $!\n";
+        my $fh = IO::File->new($gene_ontology_file) || die "Can not ontology file $gene_ontology_file $!\n";
+        while(<$fh>)
+        {
+                chomp;
+                print $tmp "\n$_" if /^id: GO/;
+                print $tmp "\t$_" if /^namespace/;
+                print $tmp "\t$_" if /^alt_id/;
+                print $tmp "\t$_" if /^is_obsolete/;
+        }
+        $fh->close;
+        $tmp->close;
+
+        my %cat = ("biological_process" => "P", "molecular_function" => "F", "cellular_component" => "C");
+
+        my %GO_cat;
+
+        $tmp = IO::File->new("TTTEEEMMMPPP") || die "Can not open temp file TTTEEEMMMPPP $!\n";
+        <$tmp>;
+        while(<$tmp>)
+        {
+                chomp;
+                my @a = split(/\t/, $_);
+
+                die "Error in GO ID format: $a[0]\n" unless $a[0] =~ m/id: /;
+                die "Error in GO namespace format: $a[1]\n" unless $a[1] =~ m/namespace: /;
+                $a[0] =~ s/id: //;
+                $a[1] =~ s/namespace: //;
+
+                if ($_ = m/is_obsolete/)
+                {
+                        $GO_cat{$a[0]} = "obsolete";
+
+                        for (my $i = 2; $i < scalar(@a); $i++)
+                        {
+                                if ($a[$i] =~ /alt_id/)
+                                {
+                                        $a[$i] =~ s/alt_id: //;
+                                        $GO_cat{$a[$i]} = "obsolete";
+                                }
+                        }
+                }
+                else
+                {
+                        die "Error, can not identify namespace for $a[0] : $a[1]\n" unless defined $cat{$a[1]};
+                        $GO_cat{$a[0]} = "$a[0]//$cat{$a[1]}";
+                        for (my $i = 2; $i < scalar(@a); $i++)
+                        {
+                                if ($a[$i] =~ /alt_id/)
+                                {
+                                        $a[$i] =~ s/alt_id: //;
+                                        $GO_cat{$a[$i]} = "$a[0]//$cat{$a[1]}";
+                                }
+                        }
+                }
+        }
+        $tmp->close;
+
+        unlink("TTTEEEMMMPPP");
+
+        return %GO_cat;
+}
+
+
 
 =head2
  go_slim: perform GO slim analysis
@@ -518,70 +511,71 @@ usage: perl $0 [options]
 
 ';
 
-my ($help, $associate_in, $listID, $associate_list, $output_prefix, $plant_go_slim, $gene_ontology_obo);
-GetOptions (
-	"h|?|help"	=> \$help,	
-	"a=s" 	=> \$associate_in,	 
-	"i=s"	=> \$listID,	
-	"g=s"	=> \$associate_list,
-	"o=s"	=> \$output_prefix, 
-	"s=s"	=> \$plant_go_slim,
-	"n=s"	=> \$gene_ontology_obo
-);
+	my ($help, $associate_in, $listID, $associate_list, $output_prefix, $plant_go_slim, $gene_ontology_obo);
+	GetOptions (
+		"h|?|help"	=> \$help,	
+		"a=s" 	=> \$associate_in,	 
+		"i=s"	=> \$listID,	
+		"g=s"	=> \$associate_list,
+		"o=s"	=> \$output_prefix, 
+		"s=s"	=> \$plant_go_slim,
+		"n=s"	=> \$gene_ontology_obo
+	);
 
-#################################################################
-# init setting and checking input files				#
-#################################################################
+	#################################################################
+	# init setting and checking input files				#
+	#################################################################
 
-die $usage if $help;
-$output_prefix ||= "GSA";
+	die $usage if $help;
+	$output_prefix ||= "GSA";
 
-my ($out_slim, $out_slim_tab, $out_slim_all, $out_slim_all_tab);
-if ($associate_in) { 
-	$out_slim = $output_prefix."_goslim";
-	$out_slim_tab = $output_prefix."_goslim_tab";
-} elsif ($listID && $associate_list ) { 
-	$out_slim = $output_prefix."_goslim";
-	$out_slim_tab = $output_prefix."_goslim_tab";
-	$out_slim_all = $output_prefix."_goslim_all";
-	$out_slim_all_tab = $output_prefix."_goslim_all_tab";
-} else { die $usage; }
+	my ($out_slim, $out_slim_tab, $out_slim_all, $out_slim_all_tab);
+	if ($associate_in) { 
+		$out_slim = $output_prefix."_goslim";
+		$out_slim_tab = $output_prefix."_goslim_tab";
+	} elsif ($listID && $associate_list ) { 
+		$out_slim = $output_prefix."_goslim";
+		$out_slim_tab = $output_prefix."_goslim_tab";
+		$out_slim_all = $output_prefix."_goslim_all";
+		$out_slim_all_tab = $output_prefix."_goslim_all_tab";
+	} else { die $usage; }
 
-$plant_go_slim ||=  ${FindBin::RealBin}."/bin/goslim_plant.obo";
-$gene_ontology_obo ||= ${FindBin::RealBin}."/bin/gene_ontology_edit.obo";
+	$plant_go_slim ||=  ${FindBin::RealBin}."/bin/goslim_plant.obo";
+	$gene_ontology_obo ||= ${FindBin::RealBin}."/bin/gene_ontology_edit.obo";
 
-unless (-s $gene_ontology_obo) { die "Error, can not find gene ontology obo file: $gene_ontology_obo\n"; }
-unless (-s $plant_go_slim) { die "Error, can not find plant go slim file: $plant_go_slim\n"; }
+	unless (-s $gene_ontology_obo) { die "Error, can not find gene ontology obo file: $gene_ontology_obo\n"; }
+	unless (-s $plant_go_slim) { die "Error, can not find plant go slim file: $plant_go_slim\n"; }
 
-my $map2slim_script = ${FindBin::RealBin}."/bin/map2slim";
-unless(-s $map2slim_script) { die "Error in $!\n"; }
+	my $map2slim_script = ${FindBin::RealBin}."/bin/map2slim";
+	unless(-s $map2slim_script) { die "Error in $!\n"; }
 
-#################################################################
-# main								#
-#################################################################
-
-if ($associate_in)
-{	
-	go_slim_analysis($associate_in, $plant_go_slim, $gene_ontology_obo, $out_slim, $out_slim_tab);
-}
-elsif ($listID && $associate_list)
-{
-	# create associate_in base on $listID and associate_list;
-	$associate_in = "input_associate";
+	#################################################################
+	# main								#
+	#################################################################
+	if ($associate_in)
+	{	
+		go_slim_analysis($associate_in, $plant_go_slim, $gene_ontology_obo, $out_slim, $out_slim_tab);
+	}
+	elsif ($listID && $associate_list)
+	{
+		# create associate_in base on $listID and associate_list;
+		$associate_in = "input_associate";
 	
-	# num_a: num of genes for list 
-	# num_b: num of genes for all
-	my ($num_a, $num_b) = generate_associate_byID($listID, $associate_list, $associate_in);
-	go_slim_analysis($associate_in, $plant_go_slim, $gene_ontology_obo, $out_slim, $out_slim_tab);
-	go_slim_analysis($associate_list, $plant_go_slim, $gene_ontology_obo, $out_slim_all, $out_slim_all_tab);
-	compute_pvalue($num_a, $num_b, $out_slim_tab ,$out_slim_all_tab);
+		# num_a: num of genes for list 
+		# num_b: num of genes for all
+		my ($num_a, $num_b) = generate_associate_byID($listID, $associate_list, $associate_in);
+		go_slim_analysis($associate_in, $plant_go_slim, $gene_ontology_obo, $out_slim, $out_slim_tab);
+		go_slim_analysis($associate_list, $plant_go_slim, $gene_ontology_obo, $out_slim_all, $out_slim_all_tab);
+		compute_pvalue($num_a, $num_b, $out_slim_tab ,$out_slim_all_tab);
 
-	unlink($associate_in);
+		unlink($associate_in);
+	}
+	else
+	{
+		die "Error in main $usage\n";
+	}
 }
-else
-{
-	die "Error in main $usage\n";
-}
+
 
 #################################################################
 # kentnf: subroutine						#
