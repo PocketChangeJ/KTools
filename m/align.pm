@@ -9,15 +9,7 @@ use FindBin;
 use IO::File;
 
 our @ISA = qw (Exporter);
-our @EXPORT = qw (levenshtein print_bin);
-
-my $bin = ${FindBin::Bin}."../m";
-
-
-sub print_bin
-{
-	print $bin."\n";
-}
+our @EXPORT = qw (levenshtein);
 
 =head2
 

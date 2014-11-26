@@ -21,10 +21,125 @@ unless (defined $options{'t'} ) { usage($version); }
 if	($options{'t'} eq 'trimo')	{ clean_trimo(\%options, \@ARGV); }	# parse multi dataset
 elsif	($options{'t'} eq 'align')	{ clean_align(\%options, \@ARGV); }	# parse multi dataset
 elsif   ($options{'t'} eq 'sRNA')	{ clean_sRNA(\%options, \@ARGV); }
+elsif	($options{'t'} eq 'barcode')	{ clean_barcode(\%options, \@ARGV); }
+elsif   ($options{'t'} eq 'pipeline')	{ pipeline(); }
 else	{ usage($version); }
 #################################################################
 # kentnf: subroutine						#
 #################################################################
+
+
+=head2
+ barcode -- split reads according to barcode, remove barcode
+=cut
+sub clean_barcode
+{
+	my ($options, $files) = @_;
+	my $usage = qq'
+USAGE $0 -t barcode  barcode_file input_reads
+
+* format of barcode file
+output_file_name1 [tab] bacode1
+output_file_name2 [tab] bacode2
+......
+
+';
+	# check input files
+	print $usage and exit if (scalar(@$files) < 2);
+	my ($barcode_file, $input_file) = ($$files[0], $$files[1]);
+	print "[ERR]no file $barcode_file\n" and exit unless -s $barcode_file;
+	print "[ERR]no file $input_file\n" and exit unless -s $input_file;
+	
+	# define output file
+	my $pre_name = $input_file;
+	$pre_name =~ s/\.txt//g; $pre_name =~ s/\.gz//g;
+	my $unmatch_file = $pre_name ."_unmatch.txt";
+	my $ambiguous_file = $pre_name . "_ambiguous.txt";
+	my $out1 = IO::File->new(">$unmatch_file") || die "Can't open unmatch output file\n";
+	my $out2 = IO::File->new(">$ambiguous_file") || die "Can't open ambiguous output file\n";
+
+        my $i = 0;
+	my %tag_info;
+	my @barcode;
+	my $OUT;
+	my $in1 = IO::File->new($barcode_file) || die "Can't open the barcode file\n";
+	while(<$in1>)
+	{
+        	chomp;
+		next if $_ =~ m/^#/;
+		my @a = split(/\t/);
+		$tag_info{$a[1]}{'file'} = $a[0];
+		$tag_info{$a[1]}{'num'} = 0;
+		push(@barcode, $a[1]);
+		
+		# Create file for each tag
+		$i++;
+		#my $out = $OUT.$i;
+		my $out;
+        	open($out, ">$a[0]") || die "can't create $a[0] $!\n";
+		$tag_info{$a[1]}{'fh'} = $out;
+	}
+	$in1->close;
+
+	# parse raw fastaq file
+	my ($in2, $id1, $id2, $seq, $qul, $modified_seq, $modified_qul);
+	my $tag_result = '';
+	my ($unmatch_num, $ambiguous_num) = (0, 0);
+	if ($input_file =~ m/\.gz$/) {
+		open($in2, "gunzip -c $input_file |") || die "Can't open the fastq file\n";
+	} else {
+		open($in2, $input_file) || die "Can't open the fastq file\n";
+	}
+
+	while(<$in2>) 
+	{
+		$id1 = $_;      chomp($id1);
+		$seq = <$in2>;   chomp($seq);
+		$id2 = <$in2>;   chomp($id2);
+		$qul = <$in2>;   chomp($qul);
+
+		# compare seq with barcode
+		foreach my $elements ( @barcode ) {
+        		my $len = length($elements);
+			next if length($seq) < $len;
+			my $read_substr = substr($seq, 0, $len);
+			my $m = 0;
+                	for( my $i = 0; $i< $len; $i++ ) {
+                        	if(substr($elements, $i, 1) eq substr($read_substr, $i, 1) ) {
+					$m++;
+                        	}
+			}
+			$tag_result.= "%".$elements if $m == $len;
+		}
+
+		if($tag_result eq "") { 				# Print unmatch seq.
+			print $out1 $id1."\n".$seq."\n".$id2."\n".$qul."\n";
+			$unmatch_num++;
+                } elsif($tag_result =~ /%[ACGTN]*%[ACGTN]*$/) {		# Print ambiguous seq.
+                        print $out2 $id1."$tag_result\n".$seq."\n".$id2."\n".$qul."\n";
+			$ambiguous_num++;
+                } else {						# Print for other non-ambiguous tags
+                        $tag_result =~ s/%//g;
+                        my $fileH = $tag_info{$tag_result}{'fh'};
+			$tag_info{$tag_result}{'num'}++;
+                        $modified_seq = substr($seq,length($tag_result), );
+                        $modified_qul = substr($qul,length($tag_result), );
+                        print $fileH $id1."\n".$modified_seq."\n".$id2."\n".$modified_qul."\n";
+                }
+                $tag_result = "";
+	}
+	$out1->close;
+	$out2->close;
+
+	foreach my $elements (@barcode) {
+        	my $fileH = $tag_info{$elements}{'fh'};
+		close($fileH);
+		print $tag_info{$elements}{'file'},"\t",$tag_info{$elements}{'num'},"\n";
+	}
+
+	print $ambiguous_file."\t".$ambiguous_num."\n";
+	print $unmatch_file."\t".$unmatch_num."\n";
+}
 
 =head2
  trimo -- clean reads using trimmomatic
@@ -123,7 +238,8 @@ sub usage
 	print qq'
 USAGE: $0 -t [tool] [options] input file
 
-	trimo	trim adapter, low quality, and short reads using trimmomatic.	
+	trimo		trim adapter, low quality, and short reads using trimmomatic.	
+	barcode		remove barcode and split file according to barcode
 
 ';
 	exit;
@@ -136,9 +252,14 @@ sub pipeline
 {
 	print qq'
 >> pipeline for $0
+>> A. remove barcode
+	\$ $0 -t barcode barcode_file input.fastq.gz
+
 >> 1. clean mRNA
       	1.1 clean adapter, low quality, short reads
+	\$ $0 -t trimo sample1_R1.fastq ... sampleN_R1.fastq | sample1_R1.fastq,sample1_R2.fastq ... sampleN_R1.fastq,sampleN_R2.fastq
 	1.2 clean rRNA or other contanmination
+	\$ $0 -t align -r reference -m 0 -v 0 -k 1 *.fastq
 	
 >> 2. clean sRNA/degradome
 	2.1 clean adapter, short reads,
@@ -146,6 +267,7 @@ sub pipeline
 
 >> 3. clean DNA
 	3.1 clean adapter, low quality, short reads
+
 ';
 	exit;
 }
