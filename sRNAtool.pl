@@ -8,6 +8,8 @@ use strict;
 use warnings;
 use IO::File;
 use Getopt::Std;
+use lib "$FindBin::RealBin/m";
+use align;
 
 my $version = 0.1;
 my $debug = 0;
@@ -17,14 +19,14 @@ my %options;
 getopts('t:i:o:p:s:c:fuh', \%options);
 unless (defined $options{'t'}) { usage($version); }
 
-if	($options{'t'} eq 'convert')	{ convert(\%options); }
+if	($options{'t'} eq 'chkadp')	{ chkadp(\%options);  }
+elsif	($options{'t'} eq 'rmadp')	{ rmadp(\%options, \@ARGV); }
+elsif	($options{'t'} eq 'convert')	{ convert(\%options); }
 elsif	($options{'t'} eq 'lengthd')	{ lengthd(\%options); }
 elsif	($options{'t'} eq 'unique' )	{ unique(\%options);  }
 elsif   ($options{'t'} eq 'norm' )	{ norm(\%options);    }
 elsif   ($options{'t'} eq 'normcut')	{ normcut(\%options); }
 elsif   ($options{'t'} eq 'combine')	{ combine(\%options); }
-elsif	($options{'t'} eq 'chkadp')	{ chkadp(\%options);  }
-elsif	($options{'t'} eq 'rmadp')	{ rmadp(\%options, \@ARGV); }
 elsif	($options{'t'} eq 'range')	{ range(\%options);   }
 elsif	($options{'t'} eq 'pipeline')   { pipeline(\%options); }
 else	{ usage($version); } 
@@ -41,32 +43,37 @@ sub rmadp
 	
 	my $subUsage = qq'
 USAGE: $0 -t rmadp [options] -s adapter_sequence  input_file1 ... input_fileN
-	-s	adapter sequence
-	-l	adapter length (5-11) (default: 9)
-	-d	distance between adater and sRNA (default: 1)
-	-m      trim from which direction, 3 or 5 (default: 3)
+	-s	3p adapter sequence [option if -p]
+	-p	5p adapter sequence [option if -s]
+	-l	3p adapter length (5-11) (default: 9)
+	-d	distance between 3p adater and sRNA (default: 1)
+
+* the 5p adapter will perform perfect match 
 
 ';
 
 	# checking parameters
-	print $subUsage and exit unless (defined $$files[0] && defined $$options{'s'});
+	print $subUsage and exit unless defined $$files[0];
 	foreach my $f ( @$files ) { print "[ERR]no file $f\n" and exit unless -s $$files[0]; }
-	
-	my $adapter = $$options{'s'};
-	my $adp_length = 9;
-	$adp_length = $$options{'l'} if (defined $$options{'l'} && $$options{'l'} > 5);
-	print "[ERR]short adapter\n" and exit if length($adapter) < 9;
-	my $strand = 3;
-	$strand = $$options{'m'} if (defined $$options{'m'} && $$options{'m'} eq '5');
+
+	my ($adp_3p, $adp_3p_len, $adp_3p_sub, $adp_5p, $adp_5p_len, $adp_5p_sub);
+	$adp_3p_len = 9;
+	$adp_5p_len = 9;
+	if (defined $$options{'s'}) {
+		$adp_3p = $$options{'s'};
+		print "[ERR]short adapter 3p\n" and exit if length($adp_3p) < 9;
+		$adp_3p_len = $$options{'l'} if (defined $$options{'l'} && $$options{'l'} > 5);
+		$adp_3p_sub = substr($adp_3p, 0, $adp_3p_len);
+	} elsif (defined $$options{'p'} ) {
+		$adp_5p = $$options{'p'};
+		print "[ERR]short adapter 5p\n" and exit if length($adp_5p) < 9;
+		$adp_5p_sub = substr($adp_5p, -$adp_5p_len);
+	} else {
+		print $subUsage and exit;
+	}
 
 	my $distance = 1;
 	$distance = $$options{'d'} if defined $$options{'d'} && $$options{'d'} >= 0;
-	$distance = 0 if $strand == 5;	# force the perfect when remove 5' adapter
-
-	my $sub_adp = substr($adapter, 0, $adp_length);
-	if ($strand eq '5') {
-		$sub_adp = substr($adapter, -$adp_length);
-	}
 
 	my $report_file = 'report_sRNA_trim.txt';
 	print "[ERR]report file exist\n" if -s $report_file;
@@ -75,13 +82,13 @@ USAGE: $0 -t rmadp [options] -s adapter_sequence  input_file1 ... input_fileN
 	foreach my $inFile ( @$files ) 
 	{
 		my $prefix = $inFile;
-		$prefix =~ s/\.gz//; $prefix =~ s/\.fastq//; $prefix =~ s/\.fq//;
+		$prefix =~ s/\.gz//; $prefix =~ s/\.fastq//; $prefix =~ s/\.fq//; $prefix =~ s/\.fasta//; $prefix =~ s/\.fa//;
 
 		my $outFile1 = $inFile.".trimmed".$distance;
-		my $outFile2 = $inFile.".unmatched".$distance;
-		my $outFile3 = $inFile.".null".$distance;
+		my $outFile2 = $inFile.".trimmed".$distance.".report.txt";
 		print "[ERR]out file exist\n" and exit if -s $outFile1;
-		#my $out = IO::File->new($outFile) || die $!;
+		my $out1 = IO::File->new($outFile1) || die $!;
+		my $out2 = IO::File->new($outFile2) || die $!;
 	
 		my $fh;
 		if ($inFile =~ m/\.gz$/) { 
@@ -100,8 +107,48 @@ USAGE: $0 -t rmadp [options] -s adapter_sequence  input_file1 ... input_fileN
 			elsif   ($id1 =~ m/^@/) { $format = 'fastq'; }
 			else    { die "[ERR]seq format $id1\n"; }
 
-			# match adapter to reads
-		
+			# match 3' adapter to reads,
+			# this method will find the best adapter
+			my ($pos_3p, $match_ed);
+			if (defined $adp_3p)
+				for (my $d=0; $d <= $distance; $d++) 
+				{
+					for (my $i=0; $i<(length($seq)-$adp_3p_len+1); $i++)
+					{
+						my $read_substr = substr($seq, $i, $adp_3p_len);
+                        			my $edit_distance = align::levenshtein($read_substr,$adp_3p_sub);
+                        			if ( $edit_distance <= $d ){
+                                			$pos_3p = $i;
+							last;
+                        			}
+					}
+					$match_ed = $d;
+					last if defined $pos_3p;
+				}
+			}
+
+			# match 5' adapter to reads
+			my $pos_5p = 0;
+			if (defined $adp_5p)
+			{
+				my ($match_start, $match_end, $match_len, $match_seq, $match_adp, $match_5p_ed, $pre_match_end);
+				$match_start = 0;
+				$match_end = 0;
+				$pre_match_end = 0;
+				while($seq =~ m/\Q$adp_sub\E/) {
+					$match_end = pos($seq) - 1;
+					$match_len = $match_end - $match_start + 1;
+					$match_seq = substr($seq, $match_start, $match_len);
+					$match_adp = substr($adp_tp, -length($match_seq));
+					$match_5p_ed = align::levenshtein($match_seq, $match_adp);
+					if ($match_5p_ed > 0) { last; }
+					$match_start = $match_end + 1;
+					$pre_match_end = $match_start;
+				}
+				$pos_5p = $pre_match_end;	
+			}
+
+			# output result
 			if ( $format eq 'fasta' ) 
 			{
 	
@@ -111,11 +158,21 @@ USAGE: $0 -t rmadp [options] -s adapter_sequence  input_file1 ... input_fileN
 			{
 				$id2 = <$fh>;	chomp($id2);
 				$qul = <$fh>;	chomp($qul);
+
+				if ( $pos_3p == 0 ) {
+					print $out2 $id1."\t$pos_5p\t$pos_3p\n";
+				} elsif ($pos_3p == length($seq)) {
+					print $out2 $id1."\t$pos_5p\t$pos_3p\n";
+				} else {
+					my $trimmed_seq = substr($seq, 0, $pos_3p);
+					my $trimmed_qul = substr($qul, 0, $pos_3p);
+					print $out1 $id1."\n".$trimmed_seq."\n".$id2."\n".$trimmed_qul."\n"; 
+				}
 			} 
 		}
 		$fh->close;
-		$out->close;
-
+		$out1->close;
+		$out2->close;
 		$report_info.="$inFile\t\t\t\n";
 	}
 

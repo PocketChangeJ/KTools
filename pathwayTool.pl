@@ -35,7 +35,10 @@ sub pwy_prepare
 	my $usage = qq'
 USAGE: $0 -t prepare input_AHRD > output 
 
+* the output file should be end with .pf
+
 ';
+	print $usage and exit unless defined $input_file;
 	
 	my ($id, $desc);
 	my $fh = IO::File->new($input_file) || die $!;
