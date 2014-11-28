@@ -2,13 +2,6 @@
 
 =head1
  sRNAtool -- tools for sRNA data preparation
- plan -- add Q20 Function, range function
- clip from 5' and 3' function by the end of this Sept 2014
- insert miRNA identification pipeline, debug, 
- insert sPARTA to it, debug
- insert ta-si analysis to it debug
- by the end of 2014, check if there is any pipeline could be used for improve 24nt sRNA analysis
- write document on reddocs
 =cut
 
 use strict;
@@ -17,79 +10,145 @@ use IO::File;
 use Getopt::Std;
 
 my $version = 0.1;
-if (@ARGV < 1) { usage($version);}
-my $tool = shift @ARGV;
+my $debug = 0;
 
 my %options;
-getopts('i:o:p:s:c:fuh', \%options);
+#getopts('a:b:c:d:e:f:g:i:j:k:l:m:n:o:p:q:r:s:t:u:v:w:x:y:z:h', \%options);
+getopts('t:i:o:p:s:c:fuh', \%options);
+unless (defined $options{'t'}) { usage($version); }
 
-if	($tool eq 'convert') { convert(\%options); }
-elsif	($tool eq 'lengthd') { lengthd(\%options); }
-elsif	($tool eq 'unique' ) { unique(\%options);  }
-elsif   ($tool eq 'norm' )   { norm(\%options);    }
-elsif   ($tool eq 'normcut') { normcut(\%options); }
-elsif   ($tool eq 'combine') { combine(\%options); }
-elsif	($tool eq 'chkadp')  { chkadp(\%options);  }
-elsif	($tool eq 'rmadp3')  { rmadp3(\%options);  }
-elsif   ($tool eq 'rmadp5')  { rmadp5(\%options);  }
-elsif	($tool eq 'range')   { range(\%options);   }
+if	($options{'t'} eq 'convert')	{ convert(\%options); }
+elsif	($options{'t'} eq 'lengthd')	{ lengthd(\%options); }
+elsif	($options{'t'} eq 'unique' )	{ unique(\%options);  }
+elsif   ($options{'t'} eq 'norm' )	{ norm(\%options);    }
+elsif   ($options{'t'} eq 'normcut')	{ normcut(\%options); }
+elsif   ($options{'t'} eq 'combine')	{ combine(\%options); }
+elsif	($options{'t'} eq 'chkadp')	{ chkadp(\%options);  }
+elsif	($options{'t'} eq 'rmadp')	{ rmadp(\%options, \@ARGV); }
+elsif	($options{'t'} eq 'range')	{ range(\%options);   }
+elsif	($options{'t'} eq 'pipeline')   { pipeline(\%options); }
 else	{ usage($version); } 
 
 #################################################################
 # kentnf: subroutine						#
 #################################################################
 =head2
- rmadp3 -- remove 3p adapter 
+ rmadp -- remove adapter 
 =cut
-sub rmadp5
+sub rmadp
 {
-	my $options = shift;
+	my ($options, $files) = @_;
 	
 	my $subUsage = qq'
-USAGE: $0 rmadp5 [options]
-	-i	input file
+USAGE: $0 -t rmadp [options] -s adapter_sequence  input_file1 ... input_fileN
 	-s	adapter sequence
-	-l	adapter length
-	-d	distance between adater and sRNA 
-	-o	output file[default: input_file.ra3]
+	-l	adapter length (5-11) (default: 9)
+	-d	distance between adater and sRNA (default: 1)
+	-m      trim from which direction, 3 or 5 (default: 3)
 
 ';
-	my ($adp_length, $distance, $outFile);
-	$adp_length = 9;
-	$distance = 0;
 
-	print $subUsage and exit unless $$options{'i'};
-	print $subUsage and exit unless $$options{'s'};
-	my $inFile  = $$options{'i'};
-	my $adapter = $$options{'s'};
-	$outFile = $inFile.".ra3";
-	$adp_length = $$options{'l'} if defined $$options{'l'};
-	$distance = $$options{'d'} if defined $$options{'d'};
-	$outFile = $$options{'o'} if defined $$options{'o'};
-
-	die "[ERR]in file not exist\n" unless -s $inFile;
-	die "[ERR]out file exist\n" if -s $outFile;
-	die "[ERR]short adapter\n" if ( length ($adapter) < $adp_length );
-
-	#my $subadp = substr($adapter, , );
-
-
-	my $format;
-	my $out = IO::File->new($outFile) || die $!;
-	my $fh = IO::File->new($inFile) || die $!;
-	while(<$fh>)
-	{
-		chomp;
-		my $id = $_;
-		if      ($id =~ m/^>/) { $format = 'fasta'; }
-		elsif   ($id =~ m/^@/) { $format = 'fastq'; }
-		else    { die "[ERR]seq format $id\n"; }
-		my $seq = <$fh>; chomp($seq); $seq = uc($seq);
+	# checking parameters
+	print $subUsage and exit unless (defined $$files[0] && defined $$options{'s'});
+	foreach my $f ( @$files ) { print "[ERR]no file $f\n" and exit unless -s $$files[0]; }
 	
-			
+	my $adapter = $$options{'s'};
+	my $adp_length = 9;
+	$adp_length = $$options{'l'} if (defined $$options{'l'} && $$options{'l'} > 5);
+	print "[ERR]short adapter\n" and exit if length($adapter) < 9;
+	my $strand = 3;
+	$strand = $$options{'m'} if (defined $$options{'m'} && $$options{'m'} eq '5');
+
+	my $distance = 1;
+	$distance = $$options{'d'} if defined $$options{'d'} && $$options{'d'} >= 0;
+	$distance = 0 if $strand == 5;	# force the perfect when remove 5' adapter
+
+	my $sub_adp = substr($adapter, 0, $adp_length);
+	if ($strand eq '5') {
+		$sub_adp = substr($adapter, -$adp_length);
 	}
-	$fh->close;
-	$out->close;
+
+	my $report_file = 'report_sRNA_trim.txt';
+	print "[ERR]report file exist\n" if -s $report_file;
+	my $report_info = "#sRNA\t\t\t\t\n";
+
+	foreach my $inFile ( @$files ) 
+	{
+		my $prefix = $inFile;
+		$prefix =~ s/\.gz//; $prefix =~ s/\.fastq//; $prefix =~ s/\.fq//;
+
+		my $outFile1 = $inFile.".trimmed".$distance;
+		my $outFile2 = $inFile.".unmatched".$distance;
+		my $outFile3 = $inFile.".null".$distance;
+		print "[ERR]out file exist\n" and exit if -s $outFile1;
+		#my $out = IO::File->new($outFile) || die $!;
+	
+		my $fh;
+		if ($inFile =~ m/\.gz$/) { 
+			$fh = IO::File->new("gunzip -c $inFile | ") || die $!;
+		} else { 
+			$fh = IO::File->new($inFile) || die $!;
+		}
+	
+		my ($format, $id1, $seq, $id2, $qul);
+		while(<$fh>)
+		{
+			$id1 = $_;	chomp($id1);
+			$seq = <$fh>;	chomp($seq);	$seq = uc($seq);
+	
+			if      ($id1 =~ m/^>/) { $format = 'fasta'; }
+			elsif   ($id1 =~ m/^@/) { $format = 'fastq'; }
+			else    { die "[ERR]seq format $id1\n"; }
+
+			# match adapter to reads
+		
+			if ( $format eq 'fasta' ) 
+			{
+	
+
+			}
+			else
+			{
+				$id2 = <$fh>;	chomp($id2);
+				$qul = <$fh>;	chomp($qul);
+			} 
+		}
+		$fh->close;
+		$out->close;
+
+		$report_info.="$inFile\t\t\t\n";
+	}
+
+	# report sRNA trim information
+	my $outr = IO::File->new(">$report_file") || die $!;
+	print $outr $report_info;
+	$outr->close;
+}
+
+# locate adapter position on read
+sub adapter_locate
+{
+	my ($read, $adapter, $strand, $distance) = @_;
+
+	my $match_position;
+
+	if ($strand eq '3') { 		# trim adapter from 3'
+		for(my $i=0; $i<(length($read)-length($adapter)+1); $i++)
+		{
+			my $subread = substr($read, $i, length($adapter));
+			my $edit_dist = align::levenshtein($subread, $adapter);
+			if ($edit_dist <= $distance) {
+				$match_position = $i;
+				last;
+			}
+		}
+
+	} else {			# trim adapter from 5'
+
+
+	}
+
+
 }
 
 =head2
@@ -173,25 +232,6 @@ USAGE: $0 chkadp [options]
 		$pre_k = $best_kmer;
 		print "$best_kmer\t$best_kmer_count\n";
 	}	
-}
-
-=head2
- rmadp -- remove adapter from sRNA sequence
-=cut
-sub rmadp
-{
-	my $options = shift;
-
-	my $subUsage = qq'
-USAGE: $0 rmadp [options]
-        -i      input file 
-        -a      adapter sequence
-        -l 	length 
-        -f      convert table to fasta (default:0) / fasta to table (1)
-<not finished>
-
-';
-	
 }
 
 =head2
@@ -793,8 +833,7 @@ Version: $version
 USAGE: $0 <command> [options] 
 Command: 
 	chkadp		check adapter sequence (kmer method)
-	rmadp3		remove 3p adapter sequence
-	rmadp5		remove 5p adapter sequence
+	rmadp		remove 5p adapter sequence
 	convert		convert between table format and fastq/fasta format
 	unique		convert between unique format and clean format
 	norm	     	normalization (RPM)
@@ -806,4 +845,23 @@ Command:
 	exit;
 }
 
+=head2
+ pipeline -- print pipeline for sRNA analysis
+=cut
+sub pipeline
+{
+	print qq'
+A: sRNA clean, collesped, length distribution
 
+B: microRNA identification
+
+C: virus identification
+
+D: Phasing RNA identification
+
+E: mimic pairing
+
+';
+
+	exit;
+}

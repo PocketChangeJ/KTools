@@ -18,10 +18,46 @@ my %options;
 getopts('a:b:c:d:e:f:g:i:j:k:l:m:n:o:p:q:r:s:t:u:v:w:x:y:z:h', \%options);
 unless (defined $options{'t'} ) { usage(); }
 
-if	($options{'t'} eq 'filter') { pwy_filter(@ARGV); }	# parse multi dataset
-elsif	($options{'t'} eq 'unique') { pwy_uniq(@ARGV); }	# parse multi dataset
-elsif	($options{'t'} eq 'enrich') { pwy_enrich(@ARGV); }
+if	($options{'t'} eq 'prepare')	{ pwy_prepare(@ARGV); }	# prepare files for pathway tools
+elsif	($options{'t'} eq 'table')	{ pwy_table(@ARGV);  }	# convert pathway tools output to tables (for downstrean analysis and MetGenMAP)
+elsif	($options{'t'} eq 'filter')	{ pwy_filter(@ARGV); }	# filter pathway tables 
+elsif	($options{'t'} eq 'unique')	{ pwy_uniq(@ARGV); }	# 
+elsif	($options{'t'} eq 'enrich')	{ pwy_enrich(@ARGV); }	# enrichment analysis
 else	{ usage(); }
+
+=head2
+ pwy_prepare: prepare files for pathway tools
+=cut
+sub pwy_prepare
+{
+	my $input_file = shift;
+
+	my $usage = qq'
+USAGE: $0 -t prepare input_AHRD > output 
+
+';
+	
+	my ($id, $desc);
+	my $fh = IO::File->new($input_file) || die $!;
+	while(<$fh>)
+	{
+		chomp;
+		next if $_ =~ m/^#/;
+		my @a = split(/\t/);
+		$id = $a[0];
+		$desc = $a[3];
+		print "ID\t$id\nNAME\t$id\nPRODUCT-TYPE\tP\nFUNCTION\t$desc\n";
+	}
+	$fh->close;
+}
+
+=head2
+ pwy_table: convert pathway tools output to tables (for downstrean analysis and MetGenMAP)
+=cut
+sub pwy_table
+{
+	my $pwy_folder = shift
+}
 
 =head2
  pwy_filter: filter the pathway result for removing none-plant pathways
@@ -29,6 +65,15 @@ else	{ usage(); }
 sub pwy_filter
 {
 	my $pathway_file = shift;
+
+        my $usage = qq'
+USAGE: $0 -t filter pathway_file
+
+* output files
+1) input_file.kept : the kept pathway for next analysis
+2) input_file.remove : the removed pathway
+
+';
 
 	my $pathway_kept   = $pathway_file.".kept";
 	my $pathway_remove = $pathway_file.".remove";
@@ -321,11 +366,15 @@ sub usage
 	my $usage = qq'
 USAGE $0 -t [tool]
 
+	prepare	prepare AHRD files for pathway tools
+	talbe	convert pathway tools output to tables (for downstrean analysis and MetGenMAP)
 	filter	filter the pathway result to remove non-plant pathways
 	unique	unique the pathway identified result
 	enrich	enrichemnt analysis for gene list
 
 Pipelines:
+	\$ pathwayTool.pl -t prepare AHRD files for pathway tools
+	\$ pathwayTool.pl -t convert pathway tools output to tables (for downstrean analysis and MetGenMAP)
 	\$ pathwayTool.pl -t filter input_pathway(the input file is generate by ptools)
 	\$ pathwayTool.pl -t unique input_pathway.kept
 	\$ pathwayTool.pl -t enrich gene_list input_pathway.kept
