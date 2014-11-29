@@ -104,15 +104,15 @@ USAGE: $0 -t rmadp [options] -s adapter_sequence  input_file1 ... input_fileN
 			$id1 = $_;	chomp($id1);
 			$seq = <$fh>;	chomp($seq);	$seq = uc($seq);
 	
-			if      ($id1 =~ m/^>/) { $format = 'fasta'; }
-			elsif   ($id1 =~ m/^@/) { $format = 'fastq'; }
+			if      ($id1 =~ m/^>/) { $format = 'fasta'; $id1 =~ s/^>//; }
+			elsif   ($id1 =~ m/^@/) { $format = 'fastq'; $id1 =~ s/^@//; }
 			else    { die "[ERR]seq format $id1\n"; }
 
 			# match 3' adapter to reads,
 			# this method will find the best adapter
 			my ($pos_3p, $match_ed);
 			if (defined $adp_3p) {
-				for (my $d=0; $d <=$distance; $d++) 
+				for (my $d=1; $d <=$distance; $d++) 
 				{
 					for (my $i=0; $i<(length($seq)-$adp_3p_len+1); $i++)
 					{
@@ -150,25 +150,32 @@ USAGE: $0 -t rmadp [options] -s adapter_sequence  input_file1 ... input_fileN
 				$pos_5p = $pre_match_end;	
 			}
 
-			# output result
-			if ( $format eq 'fasta' ) 
-			{
-	
-
+			# read id and qul from fastq file
+			if ( $format eq 'fastq' ) {
+				$id2 = <$fh>;   chomp($id2);	
+				$qul = <$fh>;   chomp($qul);
 			}
-			else
-			{
-				$id2 = <$fh>;	chomp($id2);
-				$qul = <$fh>;	chomp($qul);
 
-				if ( $pos_3p == 0 ) {
-					print $out2 $id1."\t$pos_5p\t$pos_3p\t$match_ed\n";
-				} elsif ($pos_3p == length($seq)) {
-					print $out2 $id1."\t$pos_5p\t$pos_3p\t$match_ed\n";
+			# output result
+			if ( $pos_3p == 0 ) {
+				print $out2 $id1."\t$pos_5p\t$pos_3p\t$match_ed\tnull\n";
+			} elsif ($pos_3p == length($seq)) {
+				print $out2 $id1."\t$pos_5p\t$pos_3p\t$match_ed\tunmatch\n";
+			} else {
+				my $trimmed_seq = substr($seq, 0, $pos_3p);
+				my $trimmed_qul = substr($qul, 0, $pos_3p) if $format eq 'fastq';
+
+				my $baseN = $trimmed_seq =~ tr/N/N/;
+				if ($baseN > 0) {
+					print $out2 $id1."\t$pos_5p\t$pos_3p\t$match_ed\tN $baseN\n";
+				} elsif (length($trimmed_seq) < 15 ) {
+					print $out2 $id1."\t$pos_5p\t$pos_3p\t$match_ed\tshort\n"; 
 				} else {
-					my $trimmed_seq = substr($seq, 0, $pos_3p);
-					my $trimmed_qul = substr($qul, 0, $pos_3p);
-					print $out1 $id1."\n".$trimmed_seq."\n".$id2."\n".$trimmed_qul."\n"; 
+					if ( $format eq 'fastq' ) {
+						print $out1 "@".$id1."\n".$trimmed_seq."\n".$id2."\n".$trimmed_qul."\n";
+					} else {
+						print $out1 ">".$id1."\n".$trimmed_seq."\n";
+					}
 				}
 			} 
 		}
