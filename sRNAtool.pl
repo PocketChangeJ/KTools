@@ -8,6 +8,7 @@ use strict;
 use warnings;
 use IO::File;
 use Getopt::Std;
+use FindBin;
 use lib "$FindBin::RealBin/m";
 use align;
 
@@ -15,8 +16,8 @@ my $version = 0.1;
 my $debug = 0;
 
 my %options;
-#getopts('a:b:c:d:e:f:g:i:j:k:l:m:n:o:p:q:r:s:t:u:v:w:x:y:z:h', \%options);
-getopts('t:i:o:p:s:c:fuh', \%options);
+getopts('a:b:c:d:e:g:i:j:k:l:m:n:o:p:q:r:s:t:v:w:x:y:z:fuh', \%options);
+#getopts('t:i:o:p:s:c:fuh', \%options);
 unless (defined $options{'t'}) { usage($version); }
 
 if	($options{'t'} eq 'chkadp')	{ chkadp(\%options);  }
@@ -82,14 +83,14 @@ USAGE: $0 -t rmadp [options] -s adapter_sequence  input_file1 ... input_fileN
 	foreach my $inFile ( @$files ) 
 	{
 		my $prefix = $inFile;
-		$prefix =~ s/\.gz//; $prefix =~ s/\.fastq//; $prefix =~ s/\.fq//; $prefix =~ s/\.fasta//; $prefix =~ s/\.fa//;
+		$prefix =~ s/\.gz$//; $prefix =~ s/\.fastq$//; $prefix =~ s/\.fq$//; $prefix =~ s/\.fasta$//; $prefix =~ s/\.fa$//;
 
-		my $outFile1 = $inFile.".trimmed".$distance;
-		my $outFile2 = $inFile.".trimmed".$distance.".report.txt";
-		print "[ERR]out file exist\n" and exit if -s $outFile1;
-		my $out1 = IO::File->new($outFile1) || die $!;
-		my $out2 = IO::File->new($outFile2) || die $!;
-	
+		my $outFile1 = $prefix.".trimmed".$distance;
+		my $outFile2 = $prefix.".trimmed".$distance.".report.txt";
+		#print "[ERR]out file exist\n" and exit if -s $outFile1;
+		my $out1 = IO::File->new(">".$outFile1) || die $!;
+		my $out2 = IO::File->new(">".$outFile2) || die $!;
+
 		my $fh;
 		if ($inFile =~ m/\.gz$/) { 
 			$fh = IO::File->new("gunzip -c $inFile | ") || die $!;
@@ -110,22 +111,23 @@ USAGE: $0 -t rmadp [options] -s adapter_sequence  input_file1 ... input_fileN
 			# match 3' adapter to reads,
 			# this method will find the best adapter
 			my ($pos_3p, $match_ed);
-			if (defined $adp_3p)
-				for (my $d=0; $d <= $distance; $d++) 
-				{
+			if (defined $adp_3p) {
+				#for (my $d=0; $d <=$distance; $d++) 
+				#{
 					for (my $i=0; $i<(length($seq)-$adp_3p_len+1); $i++)
 					{
 						my $read_substr = substr($seq, $i, $adp_3p_len);
-                        			my $edit_distance = align::levenshtein($read_substr,$adp_3p_sub);
-                        			if ( $edit_distance <= $d ){
+                        			my $edit_distance = hamming($read_substr,$adp_3p_sub);
+                        			if ( $edit_distance <= 1 ){
                                 			$pos_3p = $i;
 							last;
                         			}
 					}
-					$match_ed = $d;
-					last if defined $pos_3p;
-				}
+					$match_ed = 1;
+					#last if defined $pos_3p;
+				#}
 			}
+			$pos_3p = length($seq) unless defined $pos_3p;
 
 			# match 5' adapter to reads
 			my $pos_5p = 0;
@@ -135,12 +137,12 @@ USAGE: $0 -t rmadp [options] -s adapter_sequence  input_file1 ... input_fileN
 				$match_start = 0;
 				$match_end = 0;
 				$pre_match_end = 0;
-				while($seq =~ m/\Q$adp_sub\E/) {
+				while($seq =~ m/\Q$adp_5p_sub\E/) {
 					$match_end = pos($seq) - 1;
 					$match_len = $match_end - $match_start + 1;
 					$match_seq = substr($seq, $match_start, $match_len);
-					$match_adp = substr($adp_tp, -length($match_seq));
-					$match_5p_ed = align::levenshtein($match_seq, $match_adp);
+					$match_adp = substr($adp_5p, -length($match_seq));
+					$match_5p_ed = hamming($match_seq, $match_adp);
 					if ($match_5p_ed > 0) { last; }
 					$match_start = $match_end + 1;
 					$pre_match_end = $match_start;
@@ -177,36 +179,13 @@ USAGE: $0 -t rmadp [options] -s adapter_sequence  input_file1 ... input_fileN
 	}
 
 	# report sRNA trim information
-	my $outr = IO::File->new(">$report_file") || die $!;
-	print $outr $report_info;
-	$outr->close;
+	#my $outr = IO::File->new(">$report_file") || die $!;
+	#print $outr $report_info;
+	#$outr->close;
 }
 
-# locate adapter position on read
-sub adapter_locate
-{
-	my ($read, $adapter, $strand, $distance) = @_;
+sub hamming($$) { length( $_[ 0 ] ) - ( ( $_[ 0 ] ^ $_[ 1 ] ) =~ tr[\0][\0] ) }
 
-	my $match_position;
-
-	if ($strand eq '3') { 		# trim adapter from 3'
-		for(my $i=0; $i<(length($read)-length($adapter)+1); $i++)
-		{
-			my $subread = substr($read, $i, length($adapter));
-			my $edit_dist = align::levenshtein($subread, $adapter);
-			if ($edit_dist <= $distance) {
-				$match_position = $i;
-				last;
-			}
-		}
-
-	} else {			# trim adapter from 5'
-
-
-	}
-
-
-}
 
 =head2
  chkadp -- check adapter using k-mer method
