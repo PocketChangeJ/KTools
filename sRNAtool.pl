@@ -112,20 +112,20 @@ USAGE: $0 -t rmadp [options] -s adapter_sequence  input_file1 ... input_fileN
 			# this method will find the best adapter
 			my ($pos_3p, $match_ed);
 			if (defined $adp_3p) {
-				#for (my $d=0; $d <=$distance; $d++) 
-				#{
+				for (my $d=0; $d <=$distance; $d++) 
+				{
 					for (my $i=0; $i<(length($seq)-$adp_3p_len+1); $i++)
 					{
 						my $read_substr = substr($seq, $i, $adp_3p_len);
                         			my $edit_distance = hamming($read_substr,$adp_3p_sub);
-                        			if ( $edit_distance <= 1 ){
+                        			if ( $edit_distance <= $d ){
                                 			$pos_3p = $i;
 							last;
                         			}
 					}
-					$match_ed = 1;
-					#last if defined $pos_3p;
-				#}
+					$match_ed = $d;
+					last if defined $pos_3p;
+				}
 			}
 			$pos_3p = length($seq) unless defined $pos_3p;
 
@@ -162,9 +162,9 @@ USAGE: $0 -t rmadp [options] -s adapter_sequence  input_file1 ... input_fileN
 				$qul = <$fh>;	chomp($qul);
 
 				if ( $pos_3p == 0 ) {
-					print $out2 $id1."\t$pos_5p\t$pos_3p\n";
+					print $out2 $id1."\t$pos_5p\t$pos_3p\t$match_ed\n";
 				} elsif ($pos_3p == length($seq)) {
-					print $out2 $id1."\t$pos_5p\t$pos_3p\n";
+					print $out2 $id1."\t$pos_5p\t$pos_3p\t$match_ed\n";
 				} else {
 					my $trimmed_seq = substr($seq, 0, $pos_3p);
 					my $trimmed_qul = substr($qul, 0, $pos_3p);
@@ -184,7 +184,7 @@ USAGE: $0 -t rmadp [options] -s adapter_sequence  input_file1 ... input_fileN
 	#$outr->close;
 }
 
-sub hamming($$) { length( $_[ 0 ] ) - ( ( $_[ 0 ] ^ $_[ 1 ] ) =~ tr[\0][\0] ) }
+sub hamming($$) { length( $_[ 0 ] ) - ( ( $_[ 0 ] ^ $_[ 1 ] ) =~ tr[\0][\0] )  }
 
 
 =head2
