@@ -1227,14 +1227,15 @@ sub usage
 	print qq'
 USAGE: $0 -t [tool] [options] input file
 
-	align	align read to reference using tophat
-	tport	summary tophat report info to table
-	count	count aligned reads for each feature
-	norm	normalization of expression file
-	corre	generate correlation tables
-	unmap	extract unampped reads (tophat could do it)
-	denovo	denovo assembly using Trinity
-	feature	generate feature file from contigs
+	align		align read to reference using tophat
+	tport		summary tophat report info to table
+	count		count aligned reads for each feature
+	norm		normalization of expression file
+	corre		generate correlation tables
+	unmap		extract unampped reads (tophat could do it)
+	denovo		denovo assembly using Trinity
+	feature		generate feature file from contigs
+	annotate	function annotation by AHRD (blast is not inlude)	
 
 '; 
 
