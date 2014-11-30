@@ -59,26 +59,26 @@ USAGE: $0 -t rmadp [options] -s adapter_sequence  input_file1 ... input_fileN
 
 	my ($adp_3p, $adp_3p_len, $adp_3p_sub, $adp_5p, $adp_5p_len, $adp_5p_sub);
 	$adp_3p_len = 9;
-	$adp_5p_len = 9;
+	$adp_5p_len = 5;
+	if (defined $$options{'s'}|| defined $$options{'p'}) { } else { print $subUsage and exit; } 
 	if (defined $$options{'s'}) {
 		$adp_3p = $$options{'s'};
 		print "[ERR]short adapter 3p\n" and exit if length($adp_3p) < 9;
 		$adp_3p_len = $$options{'l'} if (defined $$options{'l'} && $$options{'l'} > 5);
 		$adp_3p_sub = substr($adp_3p, 0, $adp_3p_len);
-	} elsif (defined $$options{'p'} ) {
+	} 
+	if (defined $$options{'p'} ) {
 		$adp_5p = $$options{'p'};
 		print "[ERR]short adapter 5p\n" and exit if length($adp_5p) < 9;
 		$adp_5p_sub = substr($adp_5p, -$adp_5p_len);
-	} else {
-		print $subUsage and exit;
-	}
-
+	} 
+	
 	my $distance = 1;
 	$distance = $$options{'d'} if defined $$options{'d'} && $$options{'d'} >= 0;
 
 	my $report_file = 'report_sRNA_trim.txt';
 	print "[ERR]report file exist\n" if -s $report_file;
-	my $report_info = "#sRNA\t\t\t\t\n";
+	my $report_info = "#sRNA\ttotal\tunmatch\tnull\tbaseN\tshort\tAdp5p\tAdp5p_Good\tcleaned\n";
 
 	foreach my $inFile ( @$files ) 
 	{
@@ -90,6 +90,7 @@ USAGE: $0 -t rmadp [options] -s adapter_sequence  input_file1 ... input_fileN
 		#print "[ERR]out file exist\n" and exit if -s $outFile1;
 		my $out1 = IO::File->new(">".$outFile1) || die $!;
 		my $out2 = IO::File->new(">".$outFile2) || die $!;
+		print $out2 "#ReadID\tlength\tstart\tend\t3p_edit_distacne\tlabel\n";
 
 		my $fh;
 		if ($inFile =~ m/\.gz$/) { 
@@ -98,11 +99,13 @@ USAGE: $0 -t rmadp [options] -s adapter_sequence  input_file1 ... input_fileN
 			$fh = IO::File->new($inFile) || die $!;
 		}
 	
-		my ($format, $id1, $seq, $id2, $qul);
+		my ($format, $id1, $seq, $id2, $qul, $read_len);
+		my ($total_num,$unmatch_num,$null_num,$baseN_num,$short_num,$clean_num,$adp5p_num,$adp5p_clean)=(0,0,0,0,0,0,0,0);
 		while(<$fh>)
 		{
 			$id1 = $_;	chomp($id1);
 			$seq = <$fh>;	chomp($seq);	$seq = uc($seq);
+			$read_len = length($seq);
 	
 			if      ($id1 =~ m/^>/) { $format = 'fasta'; $id1 =~ s/^>//; }
 			elsif   ($id1 =~ m/^@/) { $format = 'fastq'; $id1 =~ s/^@//; }
@@ -112,7 +115,7 @@ USAGE: $0 -t rmadp [options] -s adapter_sequence  input_file1 ... input_fileN
 			# this method will find the best adapter
 			my ($pos_3p, $match_ed);
 			if (defined $adp_3p) {
-				for (my $d=1; $d <=$distance; $d++) 
+				for (my $d=0; $d <=$distance; $d++) 
 				{
 					for (my $i=0; $i<(length($seq)-$adp_3p_len+1); $i++)
 					{
@@ -137,12 +140,15 @@ USAGE: $0 -t rmadp [options] -s adapter_sequence  input_file1 ... input_fileN
 				$match_start = 0;
 				$match_end = 0;
 				$pre_match_end = 0;
-				while($seq =~ m/\Q$adp_5p_sub\E/) {
+				while($seq =~ m/\Q$adp_5p_sub\E/g) {
 					$match_end = pos($seq) - 1;
+					#print "$seq, $adp_5p_sub\n$match_end\n";
 					$match_len = $match_end - $match_start + 1;
 					$match_seq = substr($seq, $match_start, $match_len);
 					$match_adp = substr($adp_5p, -length($match_seq));
+					#print "$match_seq, $match_adp\n";
 					$match_5p_ed = hamming($match_seq, $match_adp);
+					#print "$match_5p_ed\n";
 					if ($match_5p_ed > 0) { last; }
 					$match_start = $match_end + 1;
 					$pre_match_end = $match_start;
@@ -156,43 +162,56 @@ USAGE: $0 -t rmadp [options] -s adapter_sequence  input_file1 ... input_fileN
 				$qul = <$fh>;   chomp($qul);
 			}
 
-			# output result
+			# output result 
+			my $label = '';
+			if ($pos_5p > 0 ) { $label.=",5p_match"; }
+ 
 			if ( $pos_3p == 0 ) {
-				print $out2 $id1."\t$pos_5p\t$pos_3p\t$match_ed\tnull\n";
+				$label.=",3p_null";
+				$null_num++;
 			} elsif ($pos_3p == length($seq)) {
-				print $out2 $id1."\t$pos_5p\t$pos_3p\t$match_ed\tunmatch\n";
+				$match_ed = "3p_unmatch";
+				$unmatch_num++;
 			} else {
-				my $trimmed_seq = substr($seq, 0, $pos_3p);
-				my $trimmed_qul = substr($qul, 0, $pos_3p) if $format eq 'fastq';
-
+				my $trimmed_len = $pos_3p - $pos_5p;
+				my $trimmed_seq = substr($seq, $pos_5p, $trimmed_len);
+				my $trimmed_qul = substr($qul, $pos_5p, $trimmed_len) if $format eq 'fastq';
 				my $baseN = $trimmed_seq =~ tr/N/N/;
 				if ($baseN > 0) {
-					print $out2 $id1."\t$pos_5p\t$pos_3p\t$match_ed\tN $baseN\n";
+					$label.=",baseN";
+					$baseN_num++;
 				} elsif (length($trimmed_seq) < 15 ) {
-					print $out2 $id1."\t$pos_5p\t$pos_3p\t$match_ed\tshort\n"; 
+					$label.=",short";
+					$short_num++;
 				} else {
+					$label.=",good";
+					$clean_num++;
 					if ( $format eq 'fastq' ) {
 						print $out1 "@".$id1."\n".$trimmed_seq."\n".$id2."\n".$trimmed_qul."\n";
 					} else {
 						print $out1 ">".$id1."\n".$trimmed_seq."\n";
 					}
 				}
-			} 
+			}
+
+			$label =~ s/^,//;
+			$total_num++;
+			print $out2 "$id1\t$read_len\t$pos_5p\t$pos_3p\t$match_ed\t$label\n";
+ 
 		}
 		$fh->close;
 		$out1->close;
 		$out2->close;
-		$report_info.="$inFile\t\t\t\n";
+		$report_info.="$inFile\t$total_num\t$unmatch_num\t$null_num\t$baseN_num\t$short_num\t$clean_num\n";
 	}
 
 	# report sRNA trim information
-	#my $outr = IO::File->new(">$report_file") || die $!;
-	#print $outr $report_info;
-	#$outr->close;
+	my $outr = IO::File->new(">$report_file") || die $!;
+	print $outr $report_info;
+	$outr->close;
 }
 
 sub hamming($$) { length( $_[ 0 ] ) - ( ( $_[ 0 ] ^ $_[ 1 ] ) =~ tr[\0][\0] )  }
-
 
 =head2
  chkadp -- check adapter using k-mer method
