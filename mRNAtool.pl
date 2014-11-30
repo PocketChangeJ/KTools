@@ -245,29 +245,29 @@ sub rnaseq_annotate
 	my $usage = qq'
 >> pipeline for annotation
 1. AHRD, input file is input_ctg.fa
-    \$blastall -p blastx -i input_ctg.fa -o input_ctg_tr.pairwise -d uniprot_trembl_plant -e 0.0001 -v 200 -b 200 -m 0 -a 64
-    \&blastall -p blastx -i input_ctg.fa -o input_ctg_sp.pairwise -d uniprot_sprot.fasta -e 0.0001 -v 200 -b 200 -m 0 -a 64
-    \&blastall -p blastx -i input_ctg.fa -o input_ctg_at.pairwise -d TAIR10_pep_20110103_representative_gene_model_parse_desc -e 0.0001 -v 200 -b 200 -m 0 -a 64
-    \&mRNAtool.pl -t annotate -n input_ctg.fa input_ctg_tr.pairwise input_ctg_sp.pairwise input_ctg_at.pairwise
+    \$ blastall -p blastx -i input_ctg.fa -o input_ctg_tr.pairwise -d uniprot_trembl_plant -e 0.0001 -v 200 -b 200 -m 0 -a 64
+    \$ blastall -p blastx -i input_ctg.fa -o input_ctg_sp.pairwise -d uniprot_sprot.fasta -e 0.0001 -v 200 -b 200 -m 0 -a 64
+    \$ blastall -p blastx -i input_ctg.fa -o input_ctg_at.pairwise -d TAIR10_pep_20110103_representative_gene_model_parse_desc -e 0.0001 -v 200 -b 200 -m 0 -a 64
+    \$ mRNAtool.pl -t annotate -n 1 input_ctg.fa input_ctg_sp.pairwise input_ctg_at.pairwise input_ctg_tr.pairwise
     * the output file is input_ctg.ahrd.csv
     * the blast file should be input by order (SP, AT, and TR)
     * please use "-n" if the input seq is nucleotie and blastx 
 
 2. GO annotation (using blast result from AHRD)
-    \$parse_blast.pl input_ctg_tr.pairwise 5 > input_ctg_tr.blast.table
-    \$parse_blast.pl input_ctg_sp.pairwise 5 > input_ctg_sp.blast.table
-    \$cat input_ctg_tr.blast.table input_ctg_sp.blast.table > input_ctg_uniport.blast.table
-    \$go_link_gene.pl input_ctg_uniport.blast.table parsed_go_mapping_file[option] > gene_GO
-    \$go_generate_associate.pl gene_GO organism > associate_file
-    \$go_enrichment.pl -i list_gene_id -a associate_file
-    \$go_slim.pl -a associate_file 
+    \$ parse_blast.pl input_ctg_tr.pairwise 5 > input_ctg_tr.blast.table
+    \$ parse_blast.pl input_ctg_sp.pairwise 5 > input_ctg_sp.blast.table
+    \$ cat input_ctg_tr.blast.table input_ctg_sp.blast.table > input_ctg_uniport.blast.table
+    \$ go_link_gene.pl input_ctg_uniport.blast.table parsed_go_mapping_file[option] > gene_GO
+    \$ go_generate_associate.pl gene_GO organism > associate_file
+    \$ go_enrichment.pl -i list_gene_id -a associate_file
+    \$ go_slim.pl -a associate_file 
 
 3. Pathway annotation
     * parse the AHRD csv file then fed to PathwayTools to perform analysis
  
 ';
 	my @files = @$files;
-	print "[ERR]input files\n" and exit unless scalar (@files) == 4;
+	print $usage and exit unless scalar (@files) == 4;
 	foreach my $f (@files) {
 		print "[ERR]file not exist $f\n" and exit unless -s $f;
 		# parse blast file if from code quest

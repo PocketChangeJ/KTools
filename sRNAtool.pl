@@ -164,7 +164,7 @@ USAGE: $0 -t rmadp [options] -s adapter_sequence  input_file1 ... input_fileN
 
 			# output result 
 			my $label = '';
-			if ($pos_5p > 0 ) { $label.=",5p_match"; }
+			if ($pos_5p > 0 ) { $label.=",5p_match"; $adp5p_num++; }
  
 			if ( $pos_3p == 0 ) {
 				$label.=",3p_null";
@@ -186,6 +186,7 @@ USAGE: $0 -t rmadp [options] -s adapter_sequence  input_file1 ... input_fileN
 				} else {
 					$label.=",good";
 					$clean_num++;
+					$adp5p_clean++ if $pos_5p > 0;
 					if ( $format eq 'fastq' ) {
 						print $out1 "@".$id1."\n".$trimmed_seq."\n".$id2."\n".$trimmed_qul."\n";
 					} else {
@@ -202,7 +203,7 @@ USAGE: $0 -t rmadp [options] -s adapter_sequence  input_file1 ... input_fileN
 		$fh->close;
 		$out1->close;
 		$out2->close;
-		$report_info.="$inFile\t$total_num\t$unmatch_num\t$null_num\t$baseN_num\t$short_num\t$clean_num\n";
+		$report_info.="$inFile\t$total_num\t$unmatch_num\t$null_num\t$baseN_num\t$short_num\t$adp5p_num\t$adp5p_clean\t$clean_num\n";
 	}
 
 	# report sRNA trim information
