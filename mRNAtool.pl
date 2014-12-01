@@ -1069,7 +1069,12 @@ USAGE: $0 -t unmap [options] bam,read ... | bam,read_1,read2 ...
 		{
 			my $unmap_file = $a[1].".unmap";
 			my $out = IO::File->new(">".$unmap_file) || die $!;
-			my $fh2 = IO::File->new($a[1]) || die $!;
+			my $fh2;
+			if ($a[1] =~ m/\.gz$/) {
+				$fh2 = IO::File->new("gunzip -c $a[1] | ") || die $!;
+			} else {
+				$fh2 = IO::File->new($a[1]) || die $!;
+			}
 			while(<$fh2>)
 			{
 				my $id = $_; chomp($id); my $format;
@@ -1092,7 +1097,12 @@ USAGE: $0 -t unmap [options] bam,read ... | bam,read_1,read2 ...
                         my $out1 = IO::File->new(">".$unmap_file1) || die $!;
 			my $out2 = IO::File->new(">".$unmap_file2) || die $!;
 
-			my $fh2 = IO::File->new($a[1]) || die $!;
+			my $fh2;
+			if ($a[1] =~ m/\.gz$/) {
+				$fh2 = IO::File->new("gunzip -c $a[1] | ") || die $!;
+			} else {
+				$fh2 = IO::File->new($a[1]) || die $!;
+			}
 			while(<$fh2>)
 			{
 				my $id = $_; chomp($id); my $format;
@@ -1107,7 +1117,12 @@ USAGE: $0 -t unmap [options] bam,read ... | bam,read_1,read2 ...
 			}
 			$fh2->close;
 
-			my $fh3 = IO::File->new($a[2]) || die $!;
+			my $fh3;
+			if ($a[2] =~ m/\.gz$/) {
+				$fh3 = IO::File->new("gunzip -c $a[2] | ") || die $!;
+			} else {
+				$fh3 = IO::File->new($a[2]) || die $!;
+			}
 			while(<$fh3>)
 			{
 				my $id = $_; chomp($id); my $format;
@@ -1141,7 +1156,7 @@ sub check_seq_format
 {
 	my $seq_file = shift;
 	my $format;
-	my $seq_top = `head -n 8 $seq_file`; 
+	my $seq_top = `less $seq_file | head -n 8`;	# could read gzip file 
 	chomp($seq_top); 
 	my @a = split(/\n/, $seq_top);	
 	if ($a[0] =~ m/^>/ && $a[2] =~ m/^>/ && $a[4] =~ m/^>/ && $a[6] =~ m/^>/) {
