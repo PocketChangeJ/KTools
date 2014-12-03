@@ -146,55 +146,65 @@ sub raw_count_to_hash
 # statistics analysis 
 #================================================================
 my %padj; my %replicate; my %comp_sample;
-
+my $order = 0;
 foreach my $comp (@comparison)
 {
+	# get sample name for each comparison
 	my @samples = split(/\t/, $comp);
-	
+
+	# set file name for raw count, statistics analysis output
+	$order++;	
+	my ($prefix, $raw_file, $out_file);
+	print "[ERR]comparison $comp\n" and exit if ( scalar(@samples) < 2 );
+	$prefix = join("_", @samples) if ( scalar(@samples) == 2 );
+	$prefix = "T".$order if ( scalar(@samples) > 2 );
+	$raw_file = $prefix."_raw";
+	$out_file = $prefix."_out";
+
+	# print raw count title
+	my $rfh = IO::File->new(">".$raw_file) || die $!;
+	print $rfh "gene";
+	foreach my $sample (@samples) {
+		print $rfh "\t".$$title{$sample};
+	}
+	print $rfh "\n";
+
+	# print raw count after removing none expressed gene
+	foreach my $gene (sort keys %$raw) {
+		# remove none expressed gene
+		my $sum = 0;
+		my $raw_c = $gene;
+		foreach my $sample (@sample) {
+			my @c = split(/\t/, $$raw{$gene}{$sample});
+			$replicate{$sample} = scalar(@c); # get replicate number for samples
+			foreach my $c (@c) { $sum = $sum + $c; }
+			$raw_c.="\t".$$raw{$gene}{$sample};
+		}
+		print $rfh $raw_c."\n";
+	}
+	$rfh->close;
+
+	# generate R code for comparison
 	# contron/treatment comparison
 	if ( scalar(@samples) == 2 )
 	{
-		my ($sampleA, $sampleB) = @samples; 
-		$comp_sample{$sampleA} = 1;
-	        $comp_sample{$sampleB} = 1;
-		my $raw_file = $comp; my $out_file = $comp;
-		$raw_file =~ s/\t/_/; $out_file =~ s/\t/_/;
-		$raw_file = $raw_file."_raw";
-		$out_file = $out_file."_out";
-		my @v1; my @v2;
-		my $rfh = IO::File->new(">".$raw_file) || die "Can not open file $raw_file\n";
-		print $rfh "gene\t",$$title{$sampleA},"\t",$$title{$sampleB},"\n";
-		foreach my $gene (sort keys %$raw) {
-			# remove zero
-			my $sum = 0;
-			@v1 = split(/\t/, $$raw{$gene}{$sampleA});
-			@v2 = split(/\t/, $$raw{$gene}{$sampleB});
-	
-			$replicate{$sampleA} = scalar(@v1);
-			$replicate{$sampleB} = scalar(@v2);
-			foreach my $v1 (@v1) { $sum = $sum + $v1; }
-			foreach my $v2 (@v2) { $sum = $sum + $v2; }
-			if ($sum > 0) {
-				print $rfh $gene,"\t",$$raw{$gene}{$sampleA},"\t",$$raw{$gene}{$sampleB}."\n";
-			}
-		}
-		$rfh->close;
-
+		# $comp_sample{$sampleA} = 1;
+	        # $comp_sample{$sampleB} = 1;
 		my $r; my $gene_column; my $pvalue_column; 
 
 		if ($program eq 'DESeq')
 		{
-			$r = generate_r_deseq($raw_file, $out_file, $sampleA, $sampleB, scalar(@v1), scalar(@v2));
+			$r = generate_r_deseq($raw_file, $out_file, $samples[0], $samples[1], $replicate{$samples[0]}, $replicate{$samples[1]});
 			$pvalue_column = 8;
 			$gene_column = 1;
 		}
 		elsif ($program eq 'edgeR')
 		{
 			if (defined $paired) {
-				$r = generate_r_edger_pair($raw_file, $out_file, $sampleA, $sampleB, scalar(@v1), scalar(@v2));
+				$r = generate_r_edger_pair($raw_file, $out_file, $samples[0], $samples[1], $replicate{$samples[0]}, $replicate{$samples[1]});
 				$pvalue_column = 4;
 			} else {
-				$r = generate_r_edger($raw_file, $out_file, $sampleA, $sampleB, scalar(@v1), scalar(@v2));
+				$r = generate_r_edger($raw_file, $out_file, $samples[0], $samples[1], $replicate{$samples[0]}, $replicate{$samples[1]});
 				$pvalue_column = 4;
 			}
 			$gene_column = 0;
@@ -202,14 +212,14 @@ foreach my $comp (@comparison)
 		elsif ($program eq 'limma')
 		{
 			if (defined $paired) {
-				$r = generate_r_limma_pair($raw_file, $out_file, $sampleA, $sampleB, scalar(@v1), scalar(@v2));
+				$r = generate_r_limma_pair($raw_file, $out_file, $samples[0], $samples[1], $replicate{$samples[0]}, $replicate{$samples[1]});
 				$pvalue_column = 6;
 			}
 			$gene_column = 1;
 		}
 		elsif ($program eq 'VST')
 		{
-			$r = generate_r_vst($raw_file, $out_file, $sampleA, $sampleB, scalar(@v1), scalar(@v2));
+			$r = generate_r_vst($raw_file, $out_file, $samples[0], $samples[1], $replicate{$samples[0]}, $replicate{$samples[1]});
 			$pvalue_column = 2;
 			$gene_column = 1;
 		}
@@ -230,6 +240,12 @@ foreach my $comp (@comparison)
 			$padj{$a[$gene_column]}{$comp} = $a[$pvalue_column];
 		}
 		$ofh->close;
+	}
+	elsif (@samples > 2)
+	{
+
+
+	}
 }
 
 #================================================================
