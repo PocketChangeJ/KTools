@@ -7,6 +7,7 @@ Plan: 1. make this pipeline to modular
       3. add DE_filter tool for filter sig DEG with different qvalue and fold change
       4. write description about how to use this tool in DEGanalysis pipeline
 
+12/02/2014:add time serious function to edgeR
 05/23/2013:combine DESeq and edgeR to one program
 06/12/2012:generate pdf for each comparison, including PCA plot, MA plot, and BCV plot.
 06/11/2012:identify DE genes using edgeR
@@ -30,7 +31,8 @@ Perl DEGs_pipeline.pl -t tools [options]
 	-o output (default = program)
 
 * the sample name for raw count and rpkm file should be like sample_repN
-* the program should be DESeq / edgeR / NOISeq / limma / VST
+* the program should be DESeq / edgeR / limma / VST
+* perform time course comparison if the comparison has more than samples 
 
 ';
 
@@ -87,6 +89,8 @@ sub comparison_to_array
 #================================================================
 # parse raw count dataset					
 # save comparison data files without zero
+# title : key: sample; value: rep1 \t rep2 \t ... repN
+# raw: key: gene, sample; value: raw_count1 \t raw_count2 \t ...
 #================================================================
 my ($title, $raw) = raw_count_to_hash($raw_count);
 
@@ -145,86 +149,87 @@ my %padj; my %replicate; my %comp_sample;
 
 foreach my $comp (@comparison)
 {
-	my ($sampleA, $sampleB) = split(/\t/, $comp); 
-	$comp_sample{$sampleA} = 1;
-        $comp_sample{$sampleB} = 1;
-	my $raw_file = $comp; my $out_file = $comp;
-	$raw_file =~ s/\t/_/; $out_file =~ s/\t/_/;
-	$raw_file = $raw_file."_raw";
-	$out_file = $out_file."_out";
-	my @v1; my @v2;
-	my $rfh = IO::File->new(">".$raw_file) || die "Can not open file $raw_file\n";
-	print $rfh "gene\t",$$title{$sampleA},"\t",$$title{$sampleB},"\n";
-	foreach my $gene (sort keys %$raw) {
-		# remove zero
-		my $sum = 0;
-		@v1 = split(/\t/, $$raw{$gene}{$sampleA});
-		@v2 = split(/\t/, $$raw{$gene}{$sampleB});
-
-		$replicate{$sampleA} = scalar(@v1);
-		$replicate{$sampleB} = scalar(@v2);
-		foreach my $v1 (@v1) { $sum = $sum + $v1; }
-		foreach my $v2 (@v2) { $sum = $sum + $v2; }
-		if ($sum > 0) {
-			print $rfh $gene,"\t",$$raw{$gene}{$sampleA},"\t",$$raw{$gene}{$sampleB}."\n";
+	my @samples = split(/\t/, $comp);
+	
+	# contron/treatment comparison
+	if ( scalar(@samples) == 2 )
+	{
+		my ($sampleA, $sampleB) = @samples; 
+		$comp_sample{$sampleA} = 1;
+	        $comp_sample{$sampleB} = 1;
+		my $raw_file = $comp; my $out_file = $comp;
+		$raw_file =~ s/\t/_/; $out_file =~ s/\t/_/;
+		$raw_file = $raw_file."_raw";
+		$out_file = $out_file."_out";
+		my @v1; my @v2;
+		my $rfh = IO::File->new(">".$raw_file) || die "Can not open file $raw_file\n";
+		print $rfh "gene\t",$$title{$sampleA},"\t",$$title{$sampleB},"\n";
+		foreach my $gene (sort keys %$raw) {
+			# remove zero
+			my $sum = 0;
+			@v1 = split(/\t/, $$raw{$gene}{$sampleA});
+			@v2 = split(/\t/, $$raw{$gene}{$sampleB});
+	
+			$replicate{$sampleA} = scalar(@v1);
+			$replicate{$sampleB} = scalar(@v2);
+			foreach my $v1 (@v1) { $sum = $sum + $v1; }
+			foreach my $v2 (@v2) { $sum = $sum + $v2; }
+			if ($sum > 0) {
+				print $rfh $gene,"\t",$$raw{$gene}{$sampleA},"\t",$$raw{$gene}{$sampleB}."\n";
+			}
 		}
-	}
-	$rfh->close;
+		$rfh->close;
 
-	my $r; my $gene_column; my $pvalue_column; 
+		my $r; my $gene_column; my $pvalue_column; 
 
-	if ($program eq 'DESeq')
-	{
-		$r = generate_r_deseq($raw_file, $out_file, $sampleA, $sampleB, scalar(@v1), scalar(@v2));
-		$pvalue_column = 8;
-		$gene_column = 1;
-	}
-	elsif ($program eq 'edgeR')
-	{
-		if (defined $paired) {
-			$r = generate_r_edger_pair($raw_file, $out_file, $sampleA, $sampleB, scalar(@v1), scalar(@v2));
-			$pvalue_column = 4;
-		} else {
-			$r = generate_r_edger($raw_file, $out_file, $sampleA, $sampleB, scalar(@v1), scalar(@v2));
-			$pvalue_column = 4;
+		if ($program eq 'DESeq')
+		{
+			$r = generate_r_deseq($raw_file, $out_file, $sampleA, $sampleB, scalar(@v1), scalar(@v2));
+			$pvalue_column = 8;
+			$gene_column = 1;
+		}
+		elsif ($program eq 'edgeR')
+		{
+			if (defined $paired) {
+				$r = generate_r_edger_pair($raw_file, $out_file, $sampleA, $sampleB, scalar(@v1), scalar(@v2));
+				$pvalue_column = 4;
+			} else {
+				$r = generate_r_edger($raw_file, $out_file, $sampleA, $sampleB, scalar(@v1), scalar(@v2));
+				$pvalue_column = 4;
+			}
+			$gene_column = 0;
+		}
+		elsif ($program eq 'limma')
+		{
+			if (defined $paired) {
+				$r = generate_r_limma_pair($raw_file, $out_file, $sampleA, $sampleB, scalar(@v1), scalar(@v2));
+				$pvalue_column = 6;
+			}
+			$gene_column = 1;
+		}
+		elsif ($program eq 'VST')
+		{
+			$r = generate_r_vst($raw_file, $out_file, $sampleA, $sampleB, scalar(@v1), scalar(@v2));
+			$pvalue_column = 2;
+			$gene_column = 1;
 		}
 
-		$gene_column = 0;
-	}
-	elsif ($program eq 'limma')
-	{
-		if (defined $paired) {
-			$r = generate_r_limma_pair($raw_file, $out_file, $sampleA, $sampleB, scalar(@v1), scalar(@v2));
-			$pvalue_column = 6;
+		my $tmp = IO::File->new(">temp.R") || die "Can not open temp.R file $!\n";
+		print $tmp $r;
+		$tmp->close;
+		system("R --no-save < temp.R") && die "Error at cmd R --no-save < temp.R\n";
+
+		# parse R output file and save adjusted p value to hash
+		my $ofh = IO::File->new($out_file) || die "Can not open DESeq output file $out_file $!\n";
+		<$ofh>;
+		while(<$ofh>)
+		{
+			chomp;
+			$_ =~ s/"//ig;
+			my @a = split(/\t/, $_);
+			$padj{$a[$gene_column]}{$comp} = $a[$pvalue_column];
 		}
-		
-		$gene_column = 1;
-	}
-	elsif ($program eq 'VST')
-	{
-		$r = generate_r_vst($raw_file, $out_file, $sampleA, $sampleB, scalar(@v1), scalar(@v2));
-		$pvalue_column = 2;
-		$gene_column = 1;
-		
-	}
-
-	my $tmp = IO::File->new(">temp.R") || die "Can not open temp.R file $!\n";
-	print $tmp $r;
-	$tmp->close;
-
-	system("R --no-save < temp.R") && die "Error at cmd R --no-save < temp.R\n";
-
-	# parse R output file and save adjusted p value to hash
-	my $ofh = IO::File->new($out_file) || die "Can not open DESeq output file $out_file $!\n";
-	<$ofh>;
-	while(<$ofh>)
-	{
-		chomp;
-		$_ =~ s/"//ig;
-		my @a = split(/\t/, $_);
-		$padj{$a[$gene_column]}{$comp} = $a[$pvalue_column];
-	}
-	$ofh->close;
+		$ofh->close;
 }
 
 #================================================================
