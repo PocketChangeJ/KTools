@@ -223,29 +223,44 @@ foreach my $comp (@comparison)
 			$pvalue_column = 2;
 			$gene_column = 1;
 		}
-
-		my $tmp = IO::File->new(">temp.R") || die "Can not open temp.R file $!\n";
-		print $tmp $r;
-		$tmp->close;
-		system("R --no-save < temp.R") && die "Error at cmd R --no-save < temp.R\n";
-
-		# parse R output file and save adjusted p value to hash
-		my $ofh = IO::File->new($out_file) || die "Can not open DESeq output file $out_file $!\n";
-		<$ofh>;
-		while(<$ofh>)
+		else
 		{
-			chomp;
-			$_ =~ s/"//ig;
-			my @a = split(/\t/, $_);
-			$padj{$a[$gene_column]}{$comp} = $a[$pvalue_column];
+			print "[ERR]program $program\n" and exit;
 		}
-		$ofh->close;
 	}
 	elsif (@samples > 2)
 	{
-
-
+		if ($program eq 'limma') 
+		{
+			$r = generate_r_limma_TS();
+		}
+		elsif ($program eq 'edgeR')
+		{
+			$r = generate_r_edgeR_TS();
+		}
+		else
+		{
+			print "[ERR]program $program\n" and exit;
+		}
 	}
+
+	# perform R code and
+	my $tmp = IO::File->new(">temp.R") || die "Can not open temp.R file $!\n";
+	print $tmp $r;
+	$tmp->close;
+	system("R --no-save < temp.R") && die "Error at cmd R --no-save < temp.R\n";
+	
+	# parse R output file and save adjusted p value to hash
+	my $ofh = IO::File->new($out_file) || die "Can not open DESeq output file $out_file $!\n";
+	<$ofh>;
+	while(<$ofh>)
+	{
+		chomp;
+		$_ =~ s/"//ig;
+		my @a = split(/\t/, $_);
+		$padj{$a[$gene_column]}{$comp} = $a[$pvalue_column];
+	}
+	$ofh->close;
 }
 
 #================================================================
