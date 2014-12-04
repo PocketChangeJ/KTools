@@ -243,7 +243,9 @@ foreach my $comp (@comparison)
 	{
 		if ($program eq 'limma') 
 		{
-			$r = generate_r_limma_TS();
+			$r = generate_r_limma_TS($raw_file, $out_file, \@samples, \%replicate);
+			$gene_column = 0;
+			$pvalue_column = -1;
 		}
 		elsif ($program eq 'edgeR')
 		{
@@ -272,7 +274,12 @@ foreach my $comp (@comparison)
 		chomp;
 		$_ =~ s/"//ig;
 		my @a = split(/\t/, $_);
-		$padj{$a[$gene_column]}{$comp} = $a[$pvalue_column];
+		if (scalar(@samples) == 2) {
+			$padj{$a[$gene_column]}{$comp} = $a[$pvalue_column];
+		} else {
+			my ($c1, $c2) = ($pvalue_column - 2, $pvalue_column - 1);
+			$padj{$a[$gene_column]}{$comp} = $a[$c1]."\t".$a[$c2]."\t".$a[$pvalue_column];
+		}
 		
 	}
 	$ofh->close;
@@ -428,11 +435,11 @@ foreach my $comp ( @comparisonT )
 	foreach my $s (@samples) {
 		$t.="\t".$$title{$s}."\tmean";
 	}
-	$t.="\tFDR\n";
+	$t.="\tLR/F\tPvalue\tFDR\n";
 	print $out1 $t;
 
 	# output main tables
-	my $out_line;
+	my $out_line; my $sig = 0;
 	foreach my $gene (sort keys %$RPKM)
 	{
 		$out_line = $gene;
@@ -446,13 +453,17 @@ foreach my $comp ( @comparisonT )
 	
 		if (defined $padj{$gene}{$comp}) {
 			$out_line.="\t".$padj{$gene}{$comp};
+			my @anova = split(/\t/, $out_line);
+			$sig++ if $anova[2] < 0.05;
 		} else {
-			$out_line.="\tNA";
+			$out_line.="\tNA\tNA\tNA";
 		}
 
 		print $out1 $out_line."\n";
 	}
 	$out1->close;
+
+	print "No. of sig (adj p<0.05): $sig for $comp\n";
 }
 
 my $out1 = IO::File->new(">".$output) || die "Can not open output file $output\n";
