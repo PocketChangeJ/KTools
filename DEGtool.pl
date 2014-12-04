@@ -1,5 +1,4 @@
 #!/usr/bin/perl
-
 =head
 
 Plan: 1. make this pipeline to modular
@@ -84,6 +83,17 @@ sub comparison_to_array
 	}
 	$fh->close;
 	return @comparison;
+}
+
+my @comparisonP = ();
+my @comparisonT = ();
+foreach my $comp (@comparison) {
+	my @samples = split(/\t/, $comp);
+	if (scalar(@samples) == 2 ) {
+		push (@comparisonP, $comp);
+	} elsif ( scalar(@samples) > 2 )  {
+		push (@comparisonT, $comp);
+	}
 }
 
 #================================================================
@@ -174,11 +184,12 @@ foreach my $comp (@comparison)
 		# remove none expressed gene
 		my $sum = 0;
 		my $raw_c = $gene;
-		foreach my $sample (@sample) {
-			my @c = split(/\t/, $$raw{$gene}{$sample});
-			$replicate{$sample} = scalar(@c); # get replicate number for samples
-			foreach my $c (@c) { $sum = $sum + $c; }
-			$raw_c.="\t".$$raw{$gene}{$sample};
+		foreach my $sample (@samples) {
+			$comp_sample{$sample} = 1;	  		# uniq sample name to hash
+			my @c = split(/\t/, $$raw{$gene}{$sample});	# get raw count of replicate
+			$replicate{$sample} = scalar(@c); 		# get replicate number for sample
+			foreach my $c (@c) { $sum = $sum + $c; }	# get total count for one gene 
+			$raw_c.="\t".$$raw{$gene}{$sample};		# output line
 		}
 		print $rfh $raw_c."\n";
 	}
@@ -186,11 +197,11 @@ foreach my $comp (@comparison)
 
 	# generate R code for comparison
 	# contron/treatment comparison
+	my $r; my $gene_column; my $pvalue_column;
 	if ( scalar(@samples) == 2 )
 	{
 		# $comp_sample{$sampleA} = 1;
 	        # $comp_sample{$sampleB} = 1;
-		my $r; my $gene_column; my $pvalue_column; 
 
 		if ($program eq 'DESeq')
 		{
@@ -236,7 +247,10 @@ foreach my $comp (@comparison)
 		}
 		elsif ($program eq 'edgeR')
 		{
-			$r = generate_r_edgeR_TS();
+			print "edgeR code here\n";
+			$r = generate_r_edgeR_TS($raw_file, $out_file, \@samples, \%replicate);
+			$gene_column = 0;
+			$pvalue_column = -1;
 		}
 		else
 		{
@@ -259,6 +273,7 @@ foreach my $comp (@comparison)
 		$_ =~ s/"//ig;
 		my @a = split(/\t/, $_);
 		$padj{$a[$gene_column]}{$comp} = $a[$pvalue_column];
+		
 	}
 	$ofh->close;
 }
@@ -347,69 +362,109 @@ foreach my $gene (sort keys %mean)
 {
 	foreach my $comparison (@comparison)
 	{
-		my ($compA, $compB) =  split(/\t/, $comparison);
-		my $meanA = $mean{$gene}{$compA};
-		my $meanB = $mean{$gene}{$compB};
-		my $ratio;
-		if (defined $low_RPKM && $low_RPKM > 0 )
+		my @samples = split(/\t/, $comparison);
+		if (scalar(@samples) == 2)
 		{
-			if ($compA == 0 && $compB == 0 )
+			my ($compA, $compB) =  split(/\t/, $comparison);
+			my $meanA = $mean{$gene}{$compA};
+			my $meanB = $mean{$gene}{$compB};
+			my $ratio;
+			if (defined $low_RPKM && $low_RPKM > 0 )
 			{
-				$ratio = 1;
-			}
-			elsif ($compA == 0)
-			{
-				$ratio = $compB / $low_RPKM;
-			}
-			elsif ($compB == 0)
-			{
-				$ratio = $low_RPKM / $compA;
+				if ($compA == 0 && $compB == 0 )
+				{
+					$ratio = 1;
+				}
+				elsif ($compA == 0)
+				{
+					$ratio = $compB / $low_RPKM;
+				}
+				elsif ($compB == 0)
+				{
+					$ratio = $low_RPKM / $compA;
+				}
+				else
+				{
+					$ratio = $compB / $compA;
+				}
 			}
 			else
 			{
-				$ratio = $compB / $compA;
+				if ($meanA == 0 && $meanB == 0 )
+				{
+					$ratio = 1;
+				}
+				elsif ($meanA == 0)
+				{
+					$ratio = $meanB / 0.01;
+				}
+				elsif ($meanB == 0)
+				{
+					$ratio = 0.01 / $meanA;
+				}
+				else
+				{
+					$ratio = $meanB / $meanA;
+				}
 			}
+			$ratio{$gene}{$comparison} = $ratio;
 		}
-		else
-		{
-			if ($meanA == 0 && $meanB == 0 )
-			{
-				$ratio = 1;
-			}
-			elsif ($meanA == 0)
-			{
-				$ratio = $meanB / 0.01;
-			}
-			elsif ($meanB == 0)
-			{
-				$ratio = 0.01 / $meanA;
-			}
-			else
-			{
-				$ratio = $meanB / $meanA;
-			}
-		}
-		$ratio{$gene}{$comparison} = $ratio;
 	}
 }
 
 #================================================================
 # out put result
 #================================================================
+my $fnum = 0;
+foreach my $comp ( @comparisonT )
+{
+	my @samples = split(/\t/, $comp);
+	$fnum++;
+	my $output_file = "T".$fnum."_table.txt";
+	my $out1 = IO::File->new(">".$output_file) || die $!;
+
+	# output title
+	my $t = "GeneID";
+	foreach my $s (@samples) {
+		$t.="\t".$$title{$s}."\tmean";
+	}
+	$t.="\tFDR\n";
+	print $out1 $t;
+
+	# output main tables
+	my $out_line;
+	foreach my $gene (sort keys %$RPKM)
+	{
+		$out_line = $gene;
+		foreach my $s (@samples) 
+		{
+			my $mean = $mean{$gene}{$s};
+                	$mean = sprintf("%.2f", $mean);
+			$out_line.="\t".$$RPKM{$gene}{$s}."\t".$mean;
+		}
+
+	
+		if (defined $padj{$gene}{$comp}) {
+			$out_line.="\t".$padj{$gene}{$comp};
+		} else {
+			$out_line.="\tNA";
+		}
+
+		print $out1 $out_line."\n";
+	}
+	$out1->close;
+}
+
 my $out1 = IO::File->new(">".$output) || die "Can not open output file $output\n";
 my $out2 = IO::File->new(">".$output."_filter") || die "Can not open filtered output file \n";
 
-
-print $out1 "GeneID";
-print $out2 "GeneID";
-foreach my $comp (@comparison)
-{
+my $t = "GeneID";
+foreach my $comp ( @comparisonP ) {
 	my ($sampleA, $sampleB) = split(/\t/, $comp);
-	print $out1 "\t".$$title{$sampleA}."\tmean\t".$$title{$sampleB}."\tmean\tratio\tadjust p";
-	print $out2 "\t".$$title{$sampleA}."\tmean\t".$$title{$sampleB}."\tmean\tratio\tadjust p";
+	$t.="\t".$$title{$sampleA}."\tmean\t".$$title{$sampleB}."\tmean\tratio\tadjust p";
 }
-print $out1 "\n";
-print $out2 "\n";
+print $out1 $t."\n";
+print $out2 $t."\n";
 
 my ($out_line, $sig); 
 my %report;
@@ -421,7 +476,7 @@ foreach my $gene (sort keys %$RPKM)
 	$out_line = $gene;
 	$sig = 0;
 	
-	foreach my $comp ( @comparison )
+	foreach my $comp ( @comparisonP )
 	{
 		my ($sampleA, $sampleB) = split(/\t/, $comp);
 	
@@ -473,8 +528,89 @@ foreach my $comp (sort keys %report)
 }
 
 #================================================================
-# kentnf: subroutine
+# kentnf: subroutine for R code
 #================================================================
+=head2
+ generate_r_edgeR_TS -- time series analysis using edgeR
+=cut
+sub generate_r_edgeR_TS
+{
+	my ($input, $output, $samples, $replicate ) = @_;
+
+	# get sample numbers including replicates, and construct group
+	my ($group, $factor, $design, $comparison) = ('', '', '', '');
+
+	my $num_end = 2; my $k = 0; my $pre_s;
+	foreach my $s (@$samples) {
+		print "[ERR]do not have replicate numb $s\n" unless defined $$replicate{$s};
+		my $rep_num = $$replicate{$s};
+		
+		$group.= ", rep(\"$s\", $rep_num)";
+
+		$k++;
+		for(my $j=0; $j<$rep_num; $j++) { $factor.= $k.","; } # must using number, because the model.matrix will sort by name
+		$comparison.= "$s-$pre_s," if $k > 1;
+		$design.="\"$s\", ";
+		
+		$num_end = $num_end + $rep_num;
+		$pre_s = $s;
+	}
+
+	$group =~ s/^, //;
+	$design =~ s/, $//;
+	$factor =~ s/,$//;
+	$num_end = $num_end - 1;
+
+	# get working folder
+	my $pwd = `pwd`;
+	chomp($pwd);
+
+	my $r_code = qq'
+setwd(\'$pwd\')
+library(edgeR)
+raw.data<-read.delim("$input", header=TRUE, stringsAsFactors=TRUE)
+d <- raw.data[, 2:$num_end]
+rownames(d) <- raw.data[, 1]
+group <- c($group)
+d <- DGEList(counts = d, group = group)
+dim(d)
+y <- calcNormFactors(d)
+
+# generate design 
+design <- model.matrix(~0+factor(c($factor)))
+colnames(design) <- c($design)
+design
+
+# generate comparison
+contrastT <- makeContrasts($comparison levels=design)
+
+# the dispersion has to be estimated
+y <- estimateGLMCommonDisp(y,design)
+y <- estimateGLMTrendedDisp(y,design)
+y <- estimateGLMTagwiseDisp(y,design)
+
+# fit a linear model and test for the treatment ect
+fit <- glmFit(y, design)
+lrt <- glmLRT(fit, contrast=contrastT)
+
+compTimeF <- topTags(lrt, n=50000, adjust.method="BH")
+write.table(compTimeF, sep="\\t", file="$output")
+
+';
+	return $r_code;
+}
+
+=head2
+ generate_r_limma_TS -- time series analysis using limma
+=cut
+sub generate_r_limma_TS
+{
+
+}
+
+=head2
+ generate_r_deseq -- 
+=cut
 sub generate_r_deseq
 {
 	my ($input, $output, $sampleA, $sampleB, $numA, $numB ) = @_;
