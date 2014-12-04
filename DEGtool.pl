@@ -453,7 +453,7 @@ foreach my $comp ( @comparisonT )
 	
 		if (defined $padj{$gene}{$comp}) {
 			$out_line.="\t".$padj{$gene}{$comp};
-			my @anova = split(/\t/, $out_line);
+			my @anova = split(/\t/, $padj{$gene}{$comp});
 			$sig++ if $anova[2] < 0.05;
 		} else {
 			$out_line.="\tNA\tNA\tNA";
@@ -616,7 +616,68 @@ write.table(compTimeF, sep="\\t", file="$output")
 =cut
 sub generate_r_limma_TS
 {
+	my ($input, $output, $samples, $replicate ) = @_;
 
+        # get sample numbers including replicates, and construct group
+        my ($group, $factor, $design, $comparison) = ('', '', '', '');
+
+        my $num_end = 2; my $k = 0; my $pre_s;
+        foreach my $s (@$samples) {
+                print "[ERR]do not have replicate numb $s\n" unless defined $$replicate{$s};
+                my $rep_num = $$replicate{$s};
+
+                $group.= ", rep(\"$s\", $rep_num)";
+
+                $k++;
+                for(my $j=0; $j<$rep_num; $j++) { $factor.= $k.","; } # must using number, because the model.matrix will sort by name
+                $comparison.= "$s-$pre_s," if $k > 1;
+                $design.="\"$s\", ";
+
+                $num_end = $num_end + $rep_num;
+                $pre_s = $s;
+        }
+
+        $group =~ s/^, //;
+        $design =~ s/, $//;
+        $factor =~ s/,$//;
+        $num_end = $num_end - 1;
+
+        # get working folder
+        my $pwd = `pwd`;
+        chomp($pwd);
+
+	my $r_code = qq'
+library(DESeq)
+library(limma)
+countsTable<-read.delim("$input", header=TRUE, stringsAsFactors=TRUE)
+rownames(countsTable)<-countsTable\$gene
+countsTable<-countsTable[, -1]
+conds <- factor( c($group) )
+cds<-newCountDataSet(countsTable, conds)
+cds <- estimateSizeFactors( cds )
+sizeFactors( cds )
+cdsBlind <- estimateDispersions( cds, method="blind" )
+vsd <- getVarianceStabilizedData( cdsBlind )
+eset <-vsd
+head(eset)
+
+# generate design 
+design <- model.matrix(~0+factor(c($factor)))
+colnames(design) <- c($design)
+
+# generate comparison
+contrastT <- makeContrasts($comparison levels=design)
+
+# fit dataset to the design
+fit <- lmFit(eset, design)
+fitTS <- contrasts.fit(fit, contrastT)
+fitTS <- eBayes(fitTS)
+compTimeF <- topTableF(fitTS, adjust="BH", number=50000)
+compTimeF<-compTimeF[,-1]
+write.table(compTimeF, sep="\t", file="$output")
+
+';
+	return $r_code;
 }
 
 =head2
