@@ -191,7 +191,7 @@ foreach my $comp (@comparison)
 			foreach my $c (@c) { $sum = $sum + $c; }	# get total count for one gene 
 			$raw_c.="\t".$$raw{$gene}{$sample};		# output line
 		}
-		print $rfh $raw_c."\n";
+		print $rfh $raw_c."\n" if $sum > 0;
 	}
 	$rfh->close;
 
