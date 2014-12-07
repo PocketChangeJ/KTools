@@ -495,7 +495,7 @@ USAGE: $0 align_summary1.txt align_summary2.txt ... align_summary3.txt > report_
 		my @r = split(/\n/, $rinfo);
 		my ($total, $mapped, $mhit, $lefttotal, $leftmap, $leftmhit, $righttotal, $rightmap, $rightmhit);
 
-		if (scalar @r == 14)
+		if (scalar @r == 14 || scalar @r == 13)
 		{
 			if ( $r[1] =~ m/Input\s+:\s+(\d+)/ )    { $lefttotal    = $1; }
 			if ( $r[2] =~ m/Mapped\s+:\s+(\d+)/ )   { $leftmap      = $1; }
