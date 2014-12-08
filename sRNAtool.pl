@@ -6,6 +6,7 @@
 
 use strict;
 use warnings;
+use Bio::SeqIO;
 use IO::File;
 use Getopt::Std;
 use FindBin;
@@ -20,7 +21,7 @@ getopts('a:b:c:d:e:g:i:j:k:l:m:n:o:p:q:r:s:t:v:w:x:y:z:fuh', \%options);
 #getopts('t:i:o:p:s:c:fuh', \%options);
 unless (defined $options{'t'}) { usage($version); }
 
-if	($options{'t'} eq 'chkadp')	{ chkadp(\%options);  }
+if	($options{'t'} eq 'chkadp')	{ chkadp(\%options, \@ARGV);  }
 elsif	($options{'t'} eq 'rmadp')	{ rmadp(\%options, \@ARGV); }
 elsif	($options{'t'} eq 'convert')	{ convert(\%options); }
 elsif	($options{'t'} eq 'lengthd')	{ lengthd(\%options); }
@@ -219,21 +220,30 @@ sub hamming($$) { length( $_[ 0 ] ) - ( ( $_[ 0 ] ^ $_[ 1 ] ) =~ tr[\0][\0] )  }
 =cut
 sub chkadp
 {
-	my $options = shift;
+	my ($options, $files) = @_;
 	
 	my $subUsage = qq'
-USAGE: $0 chkadp [options]
-	-i	inuput file
+USAGE: $0 chkadp [options] input_file
+	-p	check 3p/5p adapter using kmer method [default:3]
+	-y	number of reads processed (default:1e+5, min)
+
+* the script will detect the 3p adapter by default, and it will detect 5p
+  adapter by providing -p paramters, and the 3p detection will disable
+* kmer=7 for 5p detection, and kmer=9 for 3p detection
 
 ';
+	print $subUsage and exit unless $$files[0];
+	my $inFile = $$files[0];
+	die "[ERR]File not exist\n" unless -s $inFile;
 
-	my $min_len = 15;
-	my $kmer_len = 9;
 	my $read_yeild = 1e+5;
+	$read_yeild = int($$options{'y'}) if (defined $$options{'y'} && $$options{'y'} > 1e-5);
+	
+	my $strand = 3;
+	$strand = 5 if (defined $$options{'p'} && $$options{'p'} ne '3');
 
-	print $subUsage and exit unless $$options{'i'};
-	my $inFile = $$options{'i'};
-	die "[ERR]File not exist\n" unless -s $inFile;	
+	my $min_len = 15; my $kmer_len = 9;
+	$kmer_len = 7 if $strand == 5;
 
 	my %kmer_ct;		# key: kmer; value: count;
 	my $kmer_most;		# the most freq kmer
@@ -249,11 +259,22 @@ USAGE: $0 chkadp [options]
 		elsif	($id =~ m/^@/) { $format = 'fastq'; }
 		else 	{ die "[ERR]seq format $id\n"; }
 		my $seq = <$fh>; chomp($seq); $seq = uc($seq);
-		
-		my $k_count = length($seq) - $min_len - $kmer_len + 1;
+
+		my ($k_count, $k);
+		if ($strand == 3) {
+			$k_count = length($seq) - $min_len - $kmer_len + 1;
+		} else { 
+			$k_count = $min_len - $kmer_len + 1;
+		}
+			
 		for(my $i=0; $i<$k_count; $i++) 
 		{
-			my $k = substr($seq, $min_len + $i, $kmer_len);
+			if ($strand == 3) {
+				$k = substr($seq, $min_len + $i, $kmer_len);
+			} else {
+				$k = substr($seq, $i, $kmer_len);
+			}
+				
 			if ( defined $kmer_ct{$k} ) 
 			{
 				$kmer_ct{$k}++;
@@ -275,25 +296,78 @@ USAGE: $0 chkadp [options]
 	}
 	$fh->close;
 
-	# process extend kmer most
-	my @base = ("A", "T", "C", "G");
-	print "#kmer\tcount\n$kmer_most\t$kmer_most_freq\n";
-	my $pre_k = $kmer_most;
-	for(my $i=0; $i<$min_len; $i++)
+	# load Illumina technical sequence form UniVec
+	my %uv_kmer;
+	my %uv_desc;
+	my $univec = $FindBin::RealBin."/bin/adapters/UniVec";
+	die "[ERR]cat not locate univec $univec\n" unless -s $univec;
+	my $uv_in = Bio::SeqIO->new(-format=>'fasta', -file=>$univec);
+	while(my $inseq = $uv_in->next_seq)
 	{
-		my ($best_kmer, $best_kmer_count);
-		$best_kmer_count = 0;
-		my $subk = substr($pre_k, 0, $kmer_len-1);
-		foreach my $b (@base)
+		my $uv_id  = $inseq->id;
+		my $uv_seq = $inseq->seq;
+		my $uv_desc = $inseq->desc;
+		next unless $uv_desc =~ m/Illumina/;
+
+		$uv_desc{$uv_id} = $uv_desc;
+		my $k_count = $inseq->length - $kmer_len + 1;		
+		for(my $j=0; $j<$k_count; $j++) 
 		{
-			my $k = $b.$subk;
-			if (defined $kmer_ct{$k} && $kmer_ct{$k} > $best_kmer_count) {
-				$best_kmer = $k;
-				$best_kmer_count = $kmer_ct{$k};
+			my $uvk = substr($uv_seq, $j, $kmer_len);
+			if (defined $uv_kmer{$uvk}) {
+				$uv_kmer{$uvk}.= ",$uv_id#$j";
+			} else {
+				$uv_kmer{$uvk} = "$uv_id#$j";
 			}
 		}
-		$pre_k = $best_kmer;
-		print "$best_kmer\t$best_kmer_count\n";
+	}
+
+	print "=== adapter detection report ===\n";
+	print "No. of Illumina technical sequences in UniVec ". scalar(keys(%uv_desc))."\n";
+	print "No. of $kmer_len-kmer in Illumina technical seq  ".scalar(keys(%uv_kmer))."\n";
+	print "No. of read processed: $read_yeild\n";
+
+	# output more than 1 result, and kmer to adapters 
+
+	# process extend kmer most
+	my @base = ("A", "T", "C", "G");
+
+	print "=== potential adapters 1: $kmer_most, freq $kmer_most_freq ===\n";
+	print "#left-kmer\tcount\tright-kmer\tcount\n";
+	my ($pre_k_left, $pre_k_right) = ($kmer_most, $kmer_most);
+
+	for(my $i=0; $i<$min_len; $i++)
+	{
+		my ($best_kmer_left, $best_kmer_count_left, $best_kmer_right, $best_kmer_count_right);
+		$best_kmer_count_left = 0;
+		$best_kmer_count_right = 0;
+
+		my $subk_left  = substr($pre_k_left,  0, $kmer_len-1);
+		my $subk_right = substr($pre_k_right, 1, $kmer_len-1);
+
+		foreach my $b (@base)
+		{
+			my $k_left  = $b.$subk_left;
+			if (defined $kmer_ct{$k_left} && $kmer_ct{$k_left} > $best_kmer_count_left) {
+				$best_kmer_left = $k_left;
+				$best_kmer_count_left = $kmer_ct{$k_left};
+			}
+
+			my $k_right = $subk_right.$b;
+			if (defined $kmer_ct{$k_right} && $kmer_ct{$k_right} > $best_kmer_count_right) {
+				$best_kmer_right = $k_right;
+				$best_kmer_count_right = $kmer_ct{$k_right};
+			}
+			
+		}
+		$pre_k_left = $best_kmer_left;
+		$pre_k_right = $best_kmer_right;
+
+		my ($uv_id_left, $uv_id_right) = ('NA','NA');
+		$uv_id_left = $uv_kmer{$best_kmer_left} if defined $uv_kmer{$best_kmer_left};
+		$uv_id_right = $uv_kmer{$best_kmer_right} if defined $uv_kmer{$best_kmer_right};
+
+		print "$best_kmer_left\t$best_kmer_count_left\t$best_kmer_right\t$best_kmer_count_right\t$uv_id_left\t$uv_id_right\n";
 	}	
 }
 
@@ -896,7 +970,7 @@ Version: $version
 USAGE: $0 <command> [options] 
 Command: 
 	chkadp		check adapter sequence (kmer method)
-	rmadp		remove 5p adapter sequence
+	rmadp		remove sRNA adapter sequence
 	convert		convert between table format and fastq/fasta format
 	unique		convert between unique format and clean format
 	norm	     	normalization (RPM)
