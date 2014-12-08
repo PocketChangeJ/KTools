@@ -80,7 +80,7 @@ USAGE: $0 -t rmadp [options] -s adapter_sequence  input_file1 ... input_fileN
 
 	my $report_file = 'report_sRNA_trim.txt';
 	print "[ERR]report file exist\n" if -s $report_file;
-	my $report_info = "#sRNA\ttotal\tunmatch\tnull\tbaseN\tshort\tAdp5p\tAdp5p_Good\tcleaned\n";
+	my $report_info = "#sRNA\ttotal\t5Punmatch\t5Pnull\t5Pmatch\t3Punmatch\t3Pnull\t3Pmatch\tbaseN\tshort\tcleaned\tadp\tadp5\tadp3\n";
 
 	foreach my $inFile ( @$files ) 
 	{
@@ -102,7 +102,10 @@ USAGE: $0 -t rmadp [options] -s adapter_sequence  input_file1 ... input_fileN
 		}
 	
 		my ($format, $id1, $seq, $id2, $qul, $read_len);
-		my ($total_num,$unmatch_num,$null_num,$baseN_num,$short_num,$clean_num,$adp5p_num,$adp5p_clean)=(0,0,0,0,0,0,0,0);
+		my ($total_num,$unmatch_5p_num,$null_5p_num,$match_5p_num,
+			$unmatch_3p_num,$null_3p_num,$match_3p_num,
+			$baseN_num,$short_num,
+			$clean_num,$adp_clean,$adp5p_clean,$adp3p_clean)=(0,0,0,0,0,0,0,0,0,0);
 		while(<$fh>)
 		{
 			$id1 = $_;	chomp($id1);
@@ -166,15 +169,35 @@ USAGE: $0 -t rmadp [options] -s adapter_sequence  input_file1 ... input_fileN
 
 			# output result 
 			my $label = '';
-			if ($pos_5p > 0 ) { $label.=",5p_match"; $adp5p_num++; }
- 
-			if ( $pos_3p == 0 ) {
-				$label.=",3p_null";
-				$null_num++;
-			} elsif ($pos_3p == length($seq)) {
-				$match_ed = "3p_unmatch";
-				$unmatch_num++;
-			} else {
+			if (defined $adp_5p) {
+				if ($pos_5p == 0 ) {
+					$label.=",5p_unmatch";
+					$unmatch_5p_num++;
+				} elsif ($pos_5p == length($seq)) {
+					$label.=",5p_null";
+					$null_5p_num++;
+				} else {
+					$label.=",5p_match"; 
+					$match_5p_num++;
+				}
+			}
+
+			if (defined $adp_3p) {
+				if ( $pos_3p == 0 ) {
+					$label.=",3p_null";
+					$null_3p_num++;
+				} elsif ($pos_3p == length($seq)) {
+					$label.=",3p_unmatch";
+					$match_ed = "NA";
+					$unmatch_3p_num++;
+				} else {
+					$label.=",3p_match";
+					$match_3p_num++;
+				}
+			}
+
+			if ($pos_3p > $pos_5p)
+			{
 				my $trimmed_len = $pos_3p - $pos_5p;
 				my $trimmed_seq = substr($seq, $pos_5p, $trimmed_len);
 				my $trimmed_qul = substr($qul, $pos_5p, $trimmed_len) if $format eq 'fastq';
@@ -186,9 +209,15 @@ USAGE: $0 -t rmadp [options] -s adapter_sequence  input_file1 ... input_fileN
 					$label.=",short";
 					$short_num++;
 				} else {
-					$label.=",good";
 					$clean_num++;
-					$adp5p_clean++ if $pos_5p > 0;
+					if ($pos_5p > 0 && $pos_3p > 0) {
+						$adp_clean++;
+					} elsif ($pos_5p > 0) {
+						$adp5p_clean++;
+					} elsif ($pos_3p > 0) {
+						$adp3p_clean++;
+					}
+
 					if ( $format eq 'fastq' ) {
 						print $out1 "@".$id1."\n".$trimmed_seq."\n".$id2."\n".$trimmed_qul."\n";
 					} else {
@@ -205,7 +234,10 @@ USAGE: $0 -t rmadp [options] -s adapter_sequence  input_file1 ... input_fileN
 		$fh->close;
 		$out1->close;
 		$out2->close;
-		$report_info.="$inFile\t$total_num\t$unmatch_num\t$null_num\t$baseN_num\t$short_num\t$adp5p_num\t$adp5p_clean\t$clean_num\n";
+		$report_info.="$inFile\t$total_num\t
+			$unmatch_5p_num\t$null_5p_num\t$match_5p_num\t
+			$unmatch_3p_num\t$null_3p_num\t$match_3p_num\t
+			$baseN_num\t$short_num\t$clean_num\t$adp_clean\t$adp5p_clean\t$adp3p_clean\n";
 	}
 
 	# report sRNA trim information
@@ -250,6 +282,7 @@ USAGE: $0 chkadp2 [options] input_file
         my %uv_seq;	# key: seq_ID, value: seq;
         my %uv_desc;	# key: seq_ID, value: desc;
 	my %uv_match = (); # key: uv_id, value: number of match
+	my %uv_match_stat = (); # number of adapter detected with different length
         my $univec = $FindBin::RealBin."/bin/adapters/UniVec";
         die "[ERR]cat not locate univec $univec\n" unless -s $univec;
         my $uv_in = Bio::SeqIO->new(-format=>'fasta', -file=>$univec);
@@ -284,7 +317,14 @@ USAGE: $0 chkadp2 [options] input_file
 			{
 				my $useq = $uv_seq{$uid};
 				while ($useq =~ m/\Q$sub\E/g) {
-					$uv_match{$uid}++ if pos($useq) eq length($useq);
+					if (pos($useq) eq length($useq)) {
+						$uv_match{$uid}++;
+						if (defined $uv_match_stat{$uid}{$i}) {
+							$uv_match_stat{$uid}{$i}++;
+						} else {
+							$uv_match_stat{$uid}{$i} = 1;
+						}
+					}
 				}
 			}
 		}
@@ -299,7 +339,13 @@ USAGE: $0 chkadp2 [options] input_file
 	print "=== adapter detection report for $inFile ===\n";
 	foreach my $uid (sort keys %uv_seq) {
 		if ($uv_match{$uid} > ($read_yeild/1000)) {
-			print "$uid\t$uv_match{$uid}\t$uv_desc{$uid}\n$uv_seq{$uid}\n";
+			my $match_stat = "";;
+			for($min_len .. $max_len) {
+				if ( defined $uv_match_stat{$uid}{$_} ) {
+					$match_stat.=" $_:$uv_match_stat{$uid}{$_}";
+				}
+			}
+			print "$uid\t$uv_match{$uid}\t$match_stat\t$uv_desc{$uid}\n$uv_seq{$uid}\n";
 		}
 	} 
 }
