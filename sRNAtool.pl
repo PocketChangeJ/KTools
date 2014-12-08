@@ -105,7 +105,7 @@ USAGE: $0 -t rmadp [options] -s adapter_sequence  input_file1 ... input_fileN
 		my ($total_num,$unmatch_5p_num,$null_5p_num,$match_5p_num,
 			$unmatch_3p_num,$null_3p_num,$match_3p_num,
 			$baseN_num,$short_num,
-			$clean_num,$adp_clean,$adp5p_clean,$adp3p_clean)=(0,0,0,0,0,0,0,0,0,0);
+			$clean_num,$adp_clean,$adp5p_clean,$adp3p_clean)=(0,0,0,0,0,0,0,0,0,0,0,0,0);
 		while(<$fh>)
 		{
 			$id1 = $_;	chomp($id1);
@@ -210,11 +210,11 @@ USAGE: $0 -t rmadp [options] -s adapter_sequence  input_file1 ... input_fileN
 					$short_num++;
 				} else {
 					$clean_num++;
-					if ($pos_5p > 0 && $pos_3p > 0) {
+					if (defined $adp_5p && defined $adp_3p && $pos_5p > 0 && $pos_3p > 0) {
 						$adp_clean++;
-					} elsif ($pos_5p > 0) {
+					} elsif (defined $adp_5p && $pos_5p > 0) {
 						$adp5p_clean++;
-					} elsif ($pos_3p > 0) {
+					} elsif (defined $adp_3p && $pos_3p > 0) {
 						$adp3p_clean++;
 					}
 
@@ -228,16 +228,17 @@ USAGE: $0 -t rmadp [options] -s adapter_sequence  input_file1 ... input_fileN
 
 			$label =~ s/^,//;
 			$total_num++;
+			$match_ed = 'NA' unless defined $match_ed;
 			print $out2 "$id1\t$read_len\t$pos_5p\t$pos_3p\t$match_ed\t$label\n";
  
 		}
 		$fh->close;
 		$out1->close;
 		$out2->close;
-		$report_info.="$inFile\t$total_num\t
-			$unmatch_5p_num\t$null_5p_num\t$match_5p_num\t
-			$unmatch_3p_num\t$null_3p_num\t$match_3p_num\t
-			$baseN_num\t$short_num\t$clean_num\t$adp_clean\t$adp5p_clean\t$adp3p_clean\n";
+		$report_info.="$inFile\t$total_num\t".
+			"$unmatch_5p_num\t$null_5p_num\t$match_5p_num\t".
+			"$unmatch_3p_num\t$null_3p_num\t$match_3p_num\t".
+			"$baseN_num\t$short_num\t$clean_num\t$adp_clean\t$adp5p_clean\t$adp3p_clean\n";
 	}
 
 	# report sRNA trim information
