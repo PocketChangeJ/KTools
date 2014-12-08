@@ -22,6 +22,7 @@ getopts('a:b:c:d:e:g:i:j:k:l:m:n:o:p:q:r:s:t:v:w:x:y:z:fuh', \%options);
 unless (defined $options{'t'}) { usage($version); }
 
 if	($options{'t'} eq 'chkadp')	{ chkadp(\%options, \@ARGV);  }
+elsif	($options{'t'} eq 'chkadp2')    { chkadp2(\%options, \@ARGV); }
 elsif	($options{'t'} eq 'rmadp')	{ rmadp(\%options, \@ARGV); }
 elsif	($options{'t'} eq 'convert')	{ convert(\%options); }
 elsif	($options{'t'} eq 'lengthd')	{ lengthd(\%options); }
@@ -214,6 +215,94 @@ USAGE: $0 -t rmadp [options] -s adapter_sequence  input_file1 ... input_fileN
 }
 
 sub hamming($$) { length( $_[ 0 ] ) - ( ( $_[ 0 ] ^ $_[ 1 ] ) =~ tr[\0][\0] )  }
+
+=head2
+ chkadp2 -- check adapter using k-mer method
+=cut
+sub chkadp2
+{
+	my ($options, $files) = @_;
+
+my $subUsage = qq'
+USAGE: $0 chkadp2 [options] input_file
+        -p      check 3p/5p adapter using kmer method [default:3]
+        -y      number of reads processed (default:1e+5, min)
+
+* the script will detect the 3p adapter by default, and it will detect 5p
+  adapter by providing -p paramters, and the 3p detection will disable
+* kmer=7 for 5p detection, and kmer=9 for 3p detection
+
+';
+
+	print $subUsage and exit unless $$files[0];
+	my $inFile = $$files[0];
+	die "[ERR]File not exist\n" unless -s $inFile;
+	
+	my $read_yeild = 1e+5;
+	$read_yeild = int($$options{'y'}) if (defined $$options{'y'} && $$options{'y'} > 1e-5);
+
+	my $strand = 3;
+	$strand = 5 if (defined $$options{'p'} && $$options{'p'} ne '3');
+
+	my ($min_len, $max_len) = (7, 10); # scan read length is from 5 to 10
+
+	# load Illumina technical sequence form UniVec
+        my %uv_seq;	# key: seq_ID, value: seq;
+        my %uv_desc;	# key: seq_ID, value: desc;
+	my %uv_match = (); # key: uv_id, value: number of match
+        my $univec = $FindBin::RealBin."/bin/adapters/UniVec";
+        die "[ERR]cat not locate univec $univec\n" unless -s $univec;
+        my $uv_in = Bio::SeqIO->new(-format=>'fasta', -file=>$univec);
+        while(my $inseq = $uv_in->next_seq)
+        {
+                my $uv_id  = $inseq->id;
+                my $uv_seq = $inseq->seq;
+                my $uv_desc = $inseq->desc;
+                next unless $uv_desc =~ m/Illumina/;
+		$uv_seq{$uv_id} = $uv_seq;
+                $uv_desc{$uv_id} = $uv_desc;
+		$uv_match{$uv_id} = 0;
+        }
+	
+	# compare UniVec with read;
+	my $seq_ct = 0; my $format; 
+	my $fh = IO::File->new($inFile) || die $!;
+        while(<$fh>)
+        {
+                chomp;
+                my $id = $_;
+                if      ($id =~ m/^>/) { $format = 'fasta'; }
+                elsif   ($id =~ m/^@/) { $format = 'fastq'; }
+                else    { die "[ERR]seq format $id\n"; }
+                my $seq = <$fh>; chomp($seq); $seq = uc($seq);
+
+		# compare seq with univec, return location
+		for(my $i=$max_len; $i>=$min_len; $i=$i-1) 
+		{
+			my $sub = substr($seq, 0, $i);	
+			foreach my $uid (sort keys %uv_seq) 
+			{
+				my $useq = $uv_seq{$uid};
+				while ($useq =~ m/\Q$sub\E/g) {
+					$uv_match{$uid}++ if pos($useq) eq length($useq);
+				}
+			}
+		}
+
+                if ($format eq 'fastq') { <$fh>; <$fh>; }
+                $seq_ct++;
+                last if $seq_ct == $read_yeild;
+        }
+        $fh->close;
+
+	#output result
+	print "=== adapter detection report for $inFile ===\n";
+	foreach my $uid (sort keys %uv_seq) {
+		if ($uv_match{$uid} > ($read_yeild/1000)) {
+			print "$uid\t$uv_match{$uid}\t$uv_desc{$uid}\n$uv_seq{$uid}\n";
+		}
+	} 
+}
 
 =head2
  chkadp -- check adapter using k-mer method
@@ -969,7 +1058,8 @@ Version: $version
 
 USAGE: $0 <command> [options] 
 Command: 
-	chkadp		check adapter sequence (kmer method)
+	chkadp		check adapter sequence (kmer method, better for unknown adapter)
+	chkadp2		check adapter sequence (regexp method, better for known adapter)
 	rmadp		remove sRNA adapter sequence
 	convert		convert between table format and fastq/fasta format
 	unique		convert between unique format and clean format
