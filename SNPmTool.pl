@@ -49,7 +49,7 @@ sub snp_pipeline
 	my ($options, $files) = @_;
 
 	my $usage = qq'
-USAGE: perl $0 -t SNP -r reference [options]  input_RNASeq_list
+USAGE: perl $0 -t identify -r reference [options]  input_RNASeq_list
 
 	-p	thread
 	-c	comparison file
@@ -115,13 +115,15 @@ sampleNameA [tab] sampleNameB
 	#################################################################
 	# perform comparison analysis					#
 	#################################################################
+	my $script_bin = ${FindBin::RealBin}."/bin/SNPmao";
+
 	if (-s $comparison_file)
 	{
 		foreach my $comparison (sort keys %$comparison)
 		{
 			my ($cultivarA, $cultivarB) = split(/\t/, $comparison);
 			my ($pileupA, $pileupB) = ($cultivarA.".pileup", $cultivarB.".pileup");
-			my $script = ${FindBin::RealBin}."/bin/SNPmTool/combine2PileFiles";
+			my $script = "$script_bin/combine2PileFiles";
 			my $cmd_combine2PileFiles = "$script $pileupA $pileupB 0.9 0.8 $chrOrder_file 3";
 
 			print $cmd_combine2PileFiles."\n";
@@ -148,7 +150,7 @@ sampleNameA [tab] sampleNameB
 		foreach my $cultivar (sort keys %cmd_pileup)
 		{
 			my $pileup = $cultivar.".pileup";
-			my $script = ${FindBin::RealBin}."/bin/SNPmTool/pileupFilter.AtoG";
+			my $script = "$script_bin/pileupFilter.AtoG";
 			my $cmd_pileupFilter = "$script 0.9 0.8 3 $pileup";
 			print $cmd_pileupFilter."\n";
 			#system($cmd_pileupFilter) && die "Error in command: $cmd_pileupFilter\n";
@@ -164,7 +166,7 @@ sampleNameA [tab] sampleNameB
 		{
 			my $pileup = $cultivar.".pileup";
 			my $col = $cultivar.".1col";
-			my $script = ${FindBin::RealBin}."/bin/SNPmao/reSeqPrintSample.indel.fast.strAssign.RNAseq.table";
+			my $script = "$script_bin/reSeqPrintSample.indel.fast.strAssign.RNAseq.table";
 			my $cmd_reSeqPrint = "$script $genome $col $pileup $cultivar 3 3 0.3";
 			print $cmd_reSeqPrint."\n";
 			#system($cmd_reSeqPrint) && die "Error in command: $cmd_reSeqPrint\n";
