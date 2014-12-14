@@ -9,6 +9,7 @@ use IO::File;
 use FindBin;
 use Statistics::Basic qw(:all nofill);
 use Getopt::Std;
+use Bio::SeqIO;
 
 my $version = 0.1;
 my $debug = 0;
@@ -143,7 +144,7 @@ USAGE: $0 -t translate [options] transcript.fasta > protein.fasta
 		6frame: 6frame translate (default)
 		3frame: 3frame translate (for strand-specific)
 		estscan: translate using estscan (for denovo assembled transcripts)
-	-l min length of protein (default: 100)
+	-n min length of protein (default: 100)
 	-t matrix_file for estscan
 
 	* the output translated proteins need to be select for best result
@@ -160,7 +161,7 @@ USAGE: $0 -t translate [options] transcript.fasta > protein.fasta
 	}
 
 	my $min_len = 100;
-	$min_len = $$options{'l'} if (defined $$options{'l'} && $$options{'l'} > 30);
+	$min_len = $$options{'n'} if (defined $$options{'n'} && $$options{'n'} > 5);
 
         # array for order of 6 frames
         my @frames = ('0F','1F', '2F','0R','1R','2R');
@@ -213,7 +214,7 @@ USAGE: $0 -t translate [options] transcript.fasta > protein.fasta
                 	                                print "[ERR]no protein end $a_seq\n" and exit unless $a_seq =~ m/\*$/;
                         	                        $a_len = length($a_seq) - 1;
                                 	                $n_len = $n_end - $n_start + 1;
-                                        	        if ($a_len >= 100) {
+                                        	        if ($a_len >= $min_len) {
                                                 	        print ">$tid $n_start-$n_end:$n_len translated to $a_len\n$a_seq\n";
 	                                                }
 

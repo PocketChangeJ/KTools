@@ -141,6 +141,10 @@ USAGE: $0 -t rmadp [options] -s adapter_sequence  input_file1 ... input_fileN
 			my $pos_5p = 0;
 			if (defined $adp_5p)
 			{
+				# find the position locate with 10 base seed
+			
+
+				# find the position locate with 5 base seed
 				my ($match_start, $match_end, $match_len, $match_seq, $match_adp, $match_5p_ed, $pre_match_end);
 				$match_start = 0;
 				$match_end = 0;
@@ -158,6 +162,9 @@ USAGE: $0 -t rmadp [options] -s adapter_sequence  input_file1 ... input_fileN
 					$match_start = $match_end + 1;
 					$pre_match_end = $match_start;
 				}
+
+				# locate the best match 
+
 				$pos_5p = $pre_match_end;	
 			}
 
