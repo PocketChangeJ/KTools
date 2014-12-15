@@ -11,17 +11,28 @@ use diagnostics;
 
 use IO::File;
 use FindBin;
-
 use GO::TermFinder;
 use GO::AnnotationProvider::AnnotationParser;
 use GO::OntologyProvider::OboParser;
-
 use GO::TermFinderReport::Text;
-
 use GO::Utils::File    qw (GenesFromFile);
 use GO::Utils::General qw (CategorizeGenes);
 use Getopt::Long;
 
+my $version = 0.1;
+my $debug = 0;
+
+my %options;
+getopts('a:b:c:d:e:f:g:i:j:k:l:m:n:o:p:q:r:s:t:u:v:w:x:y:z:h', \%options);
+unless (defined $options{'t'} ) { usage($version); }
+
+if	($options{'t'} eq 'linkgene')	{ go_link_gene(\%options, \@ARGV); }	# parse multi dataset
+elsif	($options{'t'} eq 'associate')	{ go_associate(\%options, \@ARGV); }	# parse multi dataset
+elsif	($options{'t'} eq 'enrichment')	{ go_enrichment(\%options, \@ARGV); }	# parse multi dataset
+elsif   ($options{'t'} eq 'slim')	{ go_slim(\%options, \@ARGV); }		# parse multi dataset
+else	{ usage($version); }
+
+=head
 my ($help, $annotationFile, $totalNum, $oboFile, $listFile, $pvalue_cutoff, $correction, $image_switch);
 $correction = 'FDR';
 $pvalue_cutoff = 0.05;
@@ -37,6 +48,8 @@ GetOptions (
         "c=s"   => \$correction,
         "g"     => \$image_switch
 );
+=cut
+
 
 =head2
  go_link_gene: link gene annotation to GO term according to sequence comparison
@@ -45,7 +58,7 @@ sub go_link_gene
 {
 	my ($options, $files) = @_;
 	my $usage =  qq'
-USAGE $0 -t link -m parsed_go_mapping_file -r removed_go_term[option]  parsed_gene_blast_table > output
+USAGE $0 -t linkgene -m parsed_go_mapping_file -r removed_go_term[option]  parsed_gene_blast_table > output
 
 * 1. format of parsed_gene_blast table
 gene_ID1 [tab] hit_ID1
