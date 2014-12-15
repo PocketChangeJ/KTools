@@ -24,6 +24,69 @@ else	{ usage($version); }
 #================================================================
 # kentnf: subroutine						
 #================================================================
+sub blast_brh
+{
+	my ($options, $files) = @_;
+	my $usage = qq'
+USAGE $0 -t brh input_blast_table > output
+
+* convert blast to table first
+
+';
+	print $usage and exit unless defined $$files[0];
+	my $input_file = $$files[0];
+	die "[ERR]input not exist\n" unless -s $input_file;
+
+	my %id_best;
+	my $in = IO::File->new($input_file) || die $!;
+	while(<$in>)	
+	{
+		chomp;
+		next if $_ =~ m/^#/;
+		my @a = split(/\t/, $_);
+		# query_name \\t hit_name \\t hit_description \\t score \\t significance
+		if (defined $id_best{$a[0]}{'id'}) {
+			if ($a[4] < $id_best{$a[0]}{'e'}) {
+				$id_best{$a[0]}{'id'} = $a[1];
+				$id_best{$a[0]}{'e'} = $a[4];
+			}
+		} else {
+			$id_best{$a[0]}{'id'} = $a[1];
+			$id_best{$a[0]}{'e'} = $a[4];
+		}
+
+		if (defined $id_best{$a[1]}{'id'}) {
+			if ($a[4] < $id_best{$a[1]}{'e'}) {
+				$id_best{$a[1]}{'id'} = $a[0];
+				$id_best{$a[1]}{'e'} = $a[4];
+			}
+		} else {
+			$id_best{$a[1]} = $a[0];
+			$id_best{$a[1]}{'e'} = $a[4];
+		}
+	}
+	$in->close;
+
+	my %uniq_best;
+	foreach my $id (sort keys %id_best) {
+		my $id1 = $id_best{$id}{'id'};
+		my $id2 = $id_best{$id1}{'id'};
+		
+		if ($id2 eq $id) 
+		{
+			if (defined $uniq_best{$id2."#".$id1} || defined $uniq_best{$id1."#".$id2})  {
+				next;
+			} else {
+				print "$id2\t$id1\n";
+				$uniq_best{$id2."#".$id1} = 1;
+				$uniq_best{$id1."#".$id2} = 1;
+			}
+		}
+	}
+}
+=head2
+ blast_to_table : convert blast result to table
+=cut
 sub blast_to_table
 {
 	my ($options, $files) = @_;
