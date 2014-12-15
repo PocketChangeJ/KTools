@@ -2,6 +2,8 @@
 
 =head
  -- generate synteny table using MCScanX
+ -- compare genome using lastz
+ -- compare genome using .......
 =cut
 
 use strict;
@@ -179,7 +181,16 @@ example of pipeline:
 	\$ perl syntenyTool.pl -t mcscanx at cm
 	\$ perl syntenyTool.pl -t mcscanx sl cm
 
+	# generate plot for gene family : 
+	/home/kentnf/pipeline/iTAK/synteny/plant_synteny.pl -i vv_bHLH \
+		-a vv_gene_position -b vv.collinearity -c vv_chrSize \
+		-x at_gene_position -y at_vv.collinearity -z at_chrSize
+	will genrate two picture for result
+
+	# how to combine two result into one ?
+ 
 ';
+
 	print $usage;
 	exit;
 }
