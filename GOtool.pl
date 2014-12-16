@@ -17,14 +17,14 @@ use GO::OntologyProvider::OboParser;
 use GO::TermFinderReport::Text;
 use GO::Utils::File    qw (GenesFromFile);
 use GO::Utils::General qw (CategorizeGenes);
-use Getopt::Long;
+use Getopt::Std;
 
 my $version = 0.1;
 my $debug = 0;
 
 my %options;
 getopts('a:b:c:d:e:f:g:i:j:k:l:m:n:o:p:q:r:s:t:u:v:w:x:y:z:h', \%options);
-unless (defined $options{'t'} ) { usage($version); }
+unless ( defined $options{'t'} ) { usage($version); }
 
 if	($options{'t'} eq 'linkgene')	{ go_link_gene(\%options, \@ARGV); }	# parse multi dataset
 elsif	($options{'t'} eq 'associate')	{ go_associate(\%options, \@ARGV); }	# parse multi dataset
@@ -58,7 +58,10 @@ sub go_link_gene
 {
 	my ($options, $files) = @_;
 	my $usage =  qq'
-USAGE $0 -t linkgene -m parsed_go_mapping_file -r removed_go_term[option]  parsed_gene_blast_table > output
+USAGE $0 -t linkgene [options] parsed_gene_blast_table > output
+
+	-m parsed_go_mapping_file (default: uniport_idmapping_GO_07242013)
+	-r removed_go_term (default: non_plant_GO)
 
 * 1. format of parsed_gene_blast table
 gene_ID1 [tab] hit_ID1
@@ -94,7 +97,7 @@ be removed from gene GO table;
 	print "[ERR]no file $removed_go_term\n" and exit unless -s $removed_go_term;
 
 	# load remove GO ID to hash
-	my %removed_go; # key: GOID
+	my %removed_go; # key: GOID; value: 1
 	my $fhr = IO::File->new($removed_go_term) || die $!;
 	while(<$fhr>){
 		chomp;
@@ -103,13 +106,13 @@ be removed from gene GO table;
 		$removed_go{$a[0]} = 1;
 	}
 	$fhr->close;
-	#print scalar(keys %removed_go), " of removed none-plant related GO\n";
+	print scalar(keys %removed_go), " of removed GO ID from $removed_go_term\n";
 
 	# save hit id and GO to hash
 	# key: hit_id
 	# value: GO_ID
 	# * if one hit do not have GO ID, will not put it to hash
-	my $nn = 0; # number of removed GO
+	my $removed_num = 0; # number of removed GO
 	my %hit_GO;
 	my $fh1;
 	if ($parsed_go_mapping =~ m/\.gz/) {
@@ -123,24 +126,29 @@ be removed from gene GO table;
 		chomp;
 		next if $_ =~ m/^#/;
 		my @a = split(/\t/, $_);
-		my $hit_id = $a[0];
+		my $hit_id = shift @a;
 
+		# filter out GO ID in remove_GO hash
 		my @filtered_GO = ();
-		for(my $i=1; $i<@a; $i++) {
-			next unless $a[$i] =~ m/GO:/;		# filter members not GO ID
-			next and $nn++ if defined $removed_go{$a[$i]};	# remove GO ID;
-			push(@filtered_GO, $a[$i]);
+		foreach my $go_id (@a) {
+			next unless $go_id =~ m/GO:/;		# skip if the member is not GO ID
+			next and $removed_num++ if defined $removed_go{$go_id};	# remove GO ID;
+			push(@filtered_GO, $go_id) if $go_id =~ m/GO:/;
 		}
 
-		if (defined $hit_GO{$hit_id}) {
-			$hit_GO{$hit_id}.= "\t".$go_id;
-		} else {
-			$hit_GO{$hit_id} = $go_id;	
+		# it could handle if same hit ID present in different lines
+		if (scalar(@filtered_GO) > 0) {
+			my $go_ids = join("\t", @filtered_GO);
+			if (defined $hit_GO{$hit_id}) {
+				$hit_GO{$hit_id}.= "\t".$go_ids;
+			} else {
+				$hit_GO{$hit_id} = $go_ids;	
+			}
 		}
 	}
 	$fh1->close;
-	print "[REP]hit GO load from $parsed_go_mapping: ".scalar(keys(%hit_go))."\n";
-	print "[REP]$nn of GO has been removed by non-plant_GO term\n";
+	print "[REP]hit GO load from $parsed_go_mapping: ".scalar(keys(%hit_GO))."\n";
+	print "[REP]$removed_num of GO has been removed by non-plant_GO term\n";
 
 	# gene go id for each genes
 	# key: gene_ID
@@ -150,22 +158,21 @@ be removed from gene GO table;
 	# key: gene_ID
 	# value: 1
 	my %gene_GO; my %gene_id;
-	my $fh2;
-
 	my $fh2 = IO::File->new($input_gene_blast) || die $!;
 	while(<$fh2>)
 	{
 		chomp;
 		next if $_ =~ m/^#/;
-		# gene_ID \t hit_ID
+		# format
+		# 0 - gene_ID
+		# 1 - hit_ID
+		# ......
 		my @a = split(/\t/, $_);
 
-		if ($a[1] =~ m/tr\|/) {
-			my @b = split(/\|/, $a[1]);
-			$a[1] = $b[1];
-		}
-		# print "$_\t$a[1]\n";
+		# format the hit ID of trembl
+		if ($a[1] =~ m/tr\|/) { my @b = split(/\|/, $a[1]); $a[1] = $b[1]; }
 
+		# borrow the GO through hit ID.
 		if (defined $hit_GO{$a[1]}) {
 			if ( defined $gene_GO{$a[0]} ) {
 				$gene_GO{$a[0]}.= "\t".$hit_GO{$a[1]};
@@ -173,16 +180,15 @@ be removed from gene GO table;
 				$gene_GO{$a[0]} = $hit_GO{$a[1]};
 			}
 		}
-
 		$gene_id{$a[0]} = 1;
 	}
 	$fh1->close;
 
 	# output result 
 	foreach my $gid (sort keys %gene_GO) {
-		my $go_terms = $gene_GO{$gid};
-		$go_terms =~ s/\t/#/ig;
-		print $gid."\t".$go_terms."\n";
+		my $go_ids = $gene_GO{$gid};
+		$go_ids =~ s/\t/#/ig;
+		print $gid."\t".$go_ids."\n";
 		delete $gene_id{$gid};
 	}
 
@@ -218,7 +224,7 @@ USAGE : perl $0 -t associate [options] input_file
 	print "[ERR]no file: $input_gene_GO_file\n" and exit unless -s $input_gene_GO_file;
 
 	my $gene_ontology_file 	= ${FindBin::RealBin}."/database/GP/gene_ontology_edit.obo";
-	$gene_ontology_file = $$options{'e'} if defined $$options{'e'}
+	$gene_ontology_file = $$options{'e'} if defined $$options{'e'};
 	print "[ERR]no file: $input_gene_GO_file\n" and exit unless -s $input_gene_GO_file;
 
 	my $organism = "Prometheus";
@@ -383,9 +389,10 @@ USAGE : perl $0 -t associate [options] input_file
 
 	$out2->close;
 }
+=cut
 
 =head2
- load_gene_go
+ load_gene_go: load gene_GO info form file to hash, unique the GO ids for each gene
 =cut
 sub load_gene_GO
 {
@@ -395,10 +402,10 @@ sub load_gene_GO
         while(<$fh>)
         {
                 chomp;
-                my @a = split(/\t/, $_);
+                my @a = split(/\t/, $_, 2);
 		# it works for combination (cat) of several gene go files
                 if (defined $gene_GO{$a[0]} ) {
-                        $gene_GO{$a[0]}.= "#".$a[1];
+                        $gene_GO{$a[0]}.= "\t".$a[1];
                 } else {
                         $gene_GO{$a[0]} = $a[1];
                 }
@@ -503,10 +510,9 @@ sub load_cat_GO
 =cut
 sub go_slim
 {
-	my ($options, $usage) = @_;
+	my ($options, $files) = @_;
 
-
-my $usage = qq'
+	my $usage = qq'
 usage: perl $0 [options]
        perl $0 -a input_asso
        perl $0 -i listID -g background_asso
@@ -525,15 +531,15 @@ usage: perl $0 [options]
 ';
 
 	my ($help, $associate_in, $listID, $associate_list, $output_prefix, $plant_go_slim, $gene_ontology_obo);
-	GetOptions (
-		"h|?|help"	=> \$help,	
-		"a=s" 	=> \$associate_in,	 
-		"i=s"	=> \$listID,	
-		"g=s"	=> \$associate_list,
-		"o=s"	=> \$output_prefix, 
-		"s=s"	=> \$plant_go_slim,
-		"n=s"	=> \$gene_ontology_obo
-	);
+	#GetOptions (
+	#	"h|?|help"	=> \$help,	
+	#	"a=s" 	=> \$associate_in,	 
+	#	"i=s"	=> \$listID,	
+	#	"g=s"	=> \$associate_list,
+	#	"o=s"	=> \$output_prefix, 
+	#	"s=s"	=> \$plant_go_slim,
+	#	"n=s"	=> \$gene_ontology_obo
+	#);
 
 	#################################################################
 	# init setting and checking input files				#
@@ -589,10 +595,9 @@ usage: perl $0 [options]
 	}
 }
 
-
-#################################################################
-# kentnf: subroutine						#
-#################################################################
+# ===============================================================
+# kentnf : go_slim : subroutine					
+# ===============================================================
 =head1 generate_associate_byID
  generate_associate_byID
 =cut
@@ -633,13 +638,14 @@ sub generate_associate_byID
 	return ($num_a, $num_b);
 }
 
-
-=head1 go_slim_analysis 
+=head2
  go_slim_analysis
 =cut
 sub go_slim_analysis
 {
 	my ($associate_in, $plant_go_slim, $gene_ontology_obo, $out_slim, $out_slim_tab) = @_;
+
+	my $map2slim_script = ${FindBin::RealBin}."/bin/map2slim";
 
 	# perform GO slim analysis using map2slim script
 	my $temp_file = "TTTMMMPPP";
@@ -915,26 +921,34 @@ usage: perl $0 -t enrich [options] annotationFile listFile1 listFile2 ... listFi
   -c	correction method [bonferroni, none, simulation, FDR] ( default: FDR )
   -p	adjusted/raw p-value cutoff ( default: 0.05 )
   -g	disable/enable image output ( default: disable )
-  -h|?|help help information
 
 ';
-    exit;
-}
+	# checking input files
+	print $usage and exit unless scalar(@$files) > 1;
+	foreach my $f (@$files) {
+		die "[ERR]file not exist $f\n" unless -e $f;
+	}
 
-	# checking input parameters
+	my $annotationFile = shift @$files;
 
+	# checking parameters
+	my $correction = 'FDR';
+	$correction = $$options{'c'} if (defined $$options{'c'} && ($$options{'c'} eq "none" || $$options{'c'} eq "bonferroni" || $$options{'c'} eq "simulation"));
 
-Usage if $help;
-Usage unless $listFile;
+	my $totalNum = get_total_gene_num($annotationFile);
+	$totalNum = $options{'n'} if defined $$options{'n'};
 
-	if ($correction eq "FDR" || $correction eq "none" || $correction eq "bonferroni" || $correction eq "simulation" ) {}
-	else { Usage("Your correction method is not correct."); }
+	my $oboFile = ${FindBin::RealBin}."/bin/gene_ontology_edit.obo";;
+	if (defined $$options{'o'} && $$options{'o'} =~ /\.obo$/ && -e $$options{'o'} ) {
+		$oboFile = $$options{'o'};
+		print "=== using user provided obo file $oboFile ===\n"
+	}
 
-	# now check annotation file and get number of genes
-	unless ($totalNum){ $totalNum = get_total_gene_num($annotationFile); }
+	my $pvalue_cutoff = 0.05;
+	$pvalue_cutoff = $$options{'p'} if (defined $$options{'p'} && $$options{'p'} < 1);
 
-	if ($oboFile !~ /\.obo$/){ Usage("Your obo file does not have a .obo extension."); }
-	else { unless (-s $oboFile) { Usage("Can not find your obo file."); } }
+	my $image_switch = 0;
+	$image_switch = 1 if defined $$options{'g'};
 
 	#################################################################
 	# now set up the objects we need				#
@@ -966,10 +980,9 @@ Usage unless $listFile;
 	my $report = GO::TermFinderReport::Text->new();
 
 	# now go through each file
-	my @listFiles = ($listFile);
-
-	# foreach my $file (@listFiles)
-	# {
+	my @listFiles = (@$files);
+	foreach my $file (@listFiles)
+	{
     		print "Analyzing $file\n";
 		my @genes = GenesFromFile($file); 
 
@@ -1006,8 +1019,8 @@ Usage unless $listFile;
 			# Currently the behavior of analyze.pl differs from the
 			# default behavior of GO::TermFinder
 
-		print $fh "The following gene(s) are ambiguously named, and so will not be used:\n";
-		print $fh join("\n", @ambiguous), "\n\n";
+			print $fh "The following gene(s) are ambiguously named, and so will not be used:\n";
+			print $fh join("\n", @ambiguous), "\n\n";
 	    	}
 
 		if (@notFound){
@@ -1023,40 +1036,40 @@ Usage unless $listFile;
 			# provider, and thus the TermFinder may have used a larger
 			# number than was entered on the command line.
 
-		my $totalNumGenesUsedInBackground = $termFinder->totalNumGenes;
+			my $totalNumGenesUsedInBackground = $termFinder->totalNumGenes;
 
-		print $fh "Finding terms for ", $termFinder->aspect, "\n\n";
+			print $fh "Finding terms for ", $termFinder->aspect, "\n\n";
 
-		my @pvalues;
+			my @pvalues;
 		
-		if ($correction eq "FDR") {
-			@pvalues = $termFinder->findTerms(genes => \@list, calculateFDR => 1);
-			print "FDR working\n";
-		} else {
-			@pvalues = $termFinder->findTerms(genes => \@list, correction => $correction, calculateFDR => 0);
-			print "FDR disabled\n";
-		}
+			if ($correction eq "FDR") {
+				@pvalues = $termFinder->findTerms(genes => \@list, calculateFDR => 1);
+				print "FDR working\n";
+			} else {
+				@pvalues = $termFinder->findTerms(genes => \@list, correction => $correction, calculateFDR => 0);
+				print "FDR disabled\n";
+			}
 
-		my $numHypotheses = $report->print(pvalues  => \@pvalues,
-						   numGenes => scalar(@list),
-						   totalNum => $totalNumGenesUsedInBackground,
-						   cutoff   => $pvalue_cutoff,
-						   fh       => $fh);
+			my $numHypotheses = $report->print(pvalues  => \@pvalues,
+							   numGenes => scalar(@list),
+							   totalNum => $totalNumGenesUsedInBackground,
+							   cutoff   => $pvalue_cutoff,
+							   fh       => $fh);
 
-		# if they had no significant P-values
+			# if they had no significant P-values
 
-		if ($numHypotheses == 0)
-		{
-			print $fh "No terms were found for this aspect with a corrected P-value <= $pvalue_cutoff.\n";
-		}
+			if ($numHypotheses == 0)
+			{
+				print $fh "No terms were found for this aspect with a corrected P-value <= $pvalue_cutoff.\n";
+			}
 
-		print $fh "\n\n";
-    	}
-    	$fh->close;    
+			print $fh "\n\n";
+	    	}
+	    	$fh->close;    
 
-	parse_result($outfile, $outtable);
+		parse_result($outfile, $outtable);
+	}
 }
-
 
 =head1 
  parse_result : parse go enrichment result 
@@ -1068,7 +1081,7 @@ sub parse_result
 	my $out = IO::File->new(">".$output) || die "Can not open go enrichment table file $output\n";
 	my $in  = IO::File->new($input) || die "Can not open go enrichment term file $input\n";
 
-	print $out "#GO ID\tGO term\tT\tCluster frequency\tBackground frequency\tRaw P-value\tCorrected P-value\tGenes annotated to the term\n";
+	print $out "#GO ID\tGO term\tCategory\tCluster frequency\tBackground frequency\tRaw P-value\tCorrected P-value\tGenes annotated to the term\n";
 
 	my ($aspect, $go_id, $term, $corrected_p, $raw_p, $m1, $m2, $m3, $m4, $freq1, $freq2, $genes, $cluster_freq, $background_freq);
 	while(<$in>)
@@ -1144,7 +1157,13 @@ sub get_total_gene_num
 =cut
 sub usage
 {
+	my $version = shift;
+	my $usage = qq'
+USAGE: $0 -t [Tools] 
 
+';
+	print $usage;
+	exit;
 }
 
 =head2
