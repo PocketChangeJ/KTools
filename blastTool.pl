@@ -24,13 +24,16 @@ else	{ usage($version); }
 #================================================================
 # kentnf: subroutine						
 #================================================================
+=head
+ blast_brh: find best reciprocal hits in blast result
+=cut
 sub blast_brh
 {
 	my ($options, $files) = @_;
 	my $usage = qq'
 USAGE $0 -t brh input_blast_table > output
 
-* convert blast to table first
+* convert blast to table first, then perform this analysis
 
 ';
 	print $usage and exit unless defined $$files[0];
@@ -47,22 +50,38 @@ USAGE $0 -t brh input_blast_table > output
 		# query_name \\t hit_name \\t hit_description \\t score \\t significance
 		if (defined $id_best{$a[0]}{'id'}) {
 			if ($a[4] < $id_best{$a[0]}{'e'}) {
-				$id_best{$a[0]}{'id'} = $a[1];
+				$id_best{$a[0]}{'id'}= $a[1];
 				$id_best{$a[0]}{'e'} = $a[4];
+				$id_best{$a[0]}{'s'} = $a[3];
+			} elsif ($a[4] == $id_best{$a[0]}{'e'}) {
+				if ($a[3] > $id_best{$a[0]}{'s'} ) {
+					$id_best{$a[0]}{'id'}= $a[1];
+					$id_best{$a[0]}{'e'} = $a[4];
+					$id_best{$a[0]}{'s'} = $a[3];
+				}
 			}
 		} else {
-			$id_best{$a[0]}{'id'} = $a[1];
+			$id_best{$a[0]}{'id'}= $a[1];
 			$id_best{$a[0]}{'e'} = $a[4];
+			$id_best{$a[0]}{'s'} = $a[3];
 		}
 
 		if (defined $id_best{$a[1]}{'id'}) {
 			if ($a[4] < $id_best{$a[1]}{'e'}) {
-				$id_best{$a[1]}{'id'} = $a[0];
+				$id_best{$a[1]}{'id'}= $a[0];
 				$id_best{$a[1]}{'e'} = $a[4];
+				$id_best{$a[1]}{'s'} = $a[3];
+			} elsif ($a[4] == $id_best{$a[1]}{'e'}) {
+				if ($a[3] > $id_best{$a[1]}{'s'} ) {
+					$id_best{$a[1]}{'id'}= $a[0];
+					$id_best{$a[1]}{'e'} = $a[4];
+					$id_best{$a[1]}{'s'} = $a[3];
+				}
 			}
 		} else {
-			$id_best{$a[1]} = $a[0];
+			$id_best{$a[1]}{'id'}= $a[0];
 			$id_best{$a[1]}{'e'} = $a[4];
+			$id_best{$a[1]}{'s'} = $a[3];
 		}
 	}
 	$in->close;
