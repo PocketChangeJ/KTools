@@ -726,8 +726,7 @@ USAGE: $0 [options] input1.bam input2.bam ......
 			}
 		}
 		$fh->close;
-
-		unlink($sam); # remove sam for saving space
+		unlink($sam) if $f =~ m/\.bam$/; # remove sam for saving space
 	}
 
 	# output raw count
