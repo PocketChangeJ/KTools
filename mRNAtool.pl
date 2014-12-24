@@ -86,7 +86,7 @@ USAGE: $0 -t mapping [options] reference.fasta [input1.fq input2.fq ... | input1
 
 	-p cpu
 	-a BWA|bowtie
-	-n edit distance
+	-n edit distance (default:0)
 	-m mode (1: keep unmapped reads, 2: generate aligned bam file)
 	-l fr-firststrand, fr-secondstrand, fr-unstranded
 	
@@ -97,19 +97,35 @@ USAGE: $0 -t mapping [options] reference.fasta [input1.fq input2.fq ... | input1
 	print $usage and exit if (scalar(@files) < 2);
 	my $reference = shift @files;
 	print "[ERR]no reference\n $usage" and exit unless -s $reference;
+	my $err = 0;
 	foreach my $f (@files) {
 		my @a = split(/,/, $f);
-		if (scalar(@a) == 1)	{ print "[ERR]no input read $f\n" unless -s $f; }
-		elsif (scalar(@a) == 2) { print "[ERR]no input read1 $a[0]\n" unless -s $a[0]; print "[ERR]no input read2 $a[1]\n" unless -s $a[1]; }
-		else { print "[ERR]input read $f\n"; }
+		if (scalar(@a) == 1)	{ print "[ERR]no input read $f\n" unless -s $f; $err = 1; }
+		elsif (scalar(@a) == 2) { print "[ERR]no input read1 $a[0]\n" unless -s $a[0]; print "[ERR]no input read2 $a[1]\n" unless -s $a[1]; $err = 1; }
+		else { print "[ERR]input read $f\n"; $err = 1; }
+		exit if $err;
 	}
 
 	# check input parameters
-	my $distance = 0; $distance = $$options{'n'} if defined $$options{'n'};
-	print "[ERR]edit distance: $distance\n" if $distance > 3;
-	my $cpu = 32; $cpu = $$options{'p'} if defined $$options{'p'};
-	my $program = 'bwa'; $program = $$options{'a'} if defined $$options{'a'};
-	print "[ERR]aglin program: $program\n" if $program ne 'bwa' && $program ne 'bowtie';
+	my $distance = 0; $distance = $$options{'n'} if (defined $$options{'n'} && $distance > 0 && $distance < 4);
+	my $cpu = 32; $cpu = $$options{'p'} if (defined $$options{'p'} && $$options{'p'} > 0);
+	my $program = 'bowtie'; $program = $$options{'a'} if (defined $$options{'a'} && $$options{'a'} eq 'bwa');
+	my $maxins = 100000;
+	
+
+	my $cmd;
+	foreach my $f (@files) {
+		my @a = split(/,/, $f);	
+		if (scalar(@a) == 1) {
+			my $unmap = $a[0].".unmap";
+			my $out_sam = $a[0].".sam";
+			$cmd = "bowtie -v $distance -k 1 -p $cpu --un $unmap -S $reference $a[0] $out_sam";
+		} else {
+			my $unmap = $a[0].".unmap";
+			my $out_sam = $a[0].".sam";
+			$cmd = "bowtie -v $distance -X $maxins -k 1 -p $cpu --un $unmap -S $reference -m1 $a[0] -m2 $a[1] $out_sam";
+		}
+	}
 }
 
 =head2
@@ -124,7 +140,8 @@ USAGE: $0 -t ctgFeature contig.fasta > feature.bed
 * after generate the feature, you could count the reads using count tool 
 
 ';
-	print $usage and exit unless -s $$files[0];
+	print $usage and exit unless defined $$files[0];
+	die "[ERR]file not exist $$files[0]\n" unless -s $$files[0];
 	my $in = Bio::SeqIO->new(-format=>'fasta', -file=>$$files[0]);
 	while(my $inseq = $in->next_seq) {
 		print $inseq->id,"\t0\t",$inseq->length,"\t", $inseq->id,"\t",$inseq->length,"\t+\n",
@@ -592,7 +609,7 @@ USAGE: $0 [options] input1.bam input2.bam ......
 	# check alignment file
 	foreach my $f ( @$files ) { 
 		die "[ERR]no alignment file $f\n" unless -s $f;
-		die "[ERR]no bam file $f\n" unless $f =~ m/\.bam$/;
+		die "[ERR]no bam file $f\n" unless $f =~ m/\.(bam|sam)$/;
 	}
 
 	# load feature into to hash
@@ -613,7 +630,8 @@ USAGE: $0 [options] input1.bam input2.bam ......
 			'339' => 1, '419'=> 1, '337' => 1, '417'=> 1);
 
 	foreach my $f ( @$files ) {
-		my $sam = $f; $sam =~ s/\.bam/\.sam/;
+		my $sam = $f; 
+		$sam =~ s/\.bam/\.sam/ if $f =~ m/\.bam$/;
 		run_cmd("samtools view -h -o $sam $f") unless -s $sam;
 
 		# uniq reads for Paired reads
@@ -1250,7 +1268,7 @@ USAGE: $0 -t [tool] [options] input file
 	corre		generate correlation tables
 	unmap		extract unampped reads (tophat could do it)
 	denovo		denovo assembly using Trinity
-	feature		generate feature file from contigs
+	ctgFeature	generate feature file from contigs
 	annotate	function annotation by AHRD (blast is not inlude)	
 
 '; 

@@ -115,14 +115,23 @@ sub blast_brh
 {
 	my ($options, $files) = @_;
 	my $usage = qq'
-USAGE $0 -t brh input_blast_table > output
+USAGE $0 -t brh [options] input_blast_table > output
+
+	-e column number for evalue (default 4)
+	-s column number for score  (default 3)
 
 * convert blast to table first, then perform this analysis
+* for blast -m8 output, please set -e to 10 -s to 11
 
 ';
 	print $usage and exit unless defined $$files[0];
 	my $input_file = $$files[0];
 	die "[ERR]input not exist\n" unless -s $input_file;
+
+	my $e_col = 4;
+	my $s_col = 3;
+	$e_col = $$options{'e'} if defined $$options{'e'};
+	$s_col = $$options{'s'} if defined $$options{'s'};
 
 	my %id_best;
 	my $in = IO::File->new($input_file) || die $!;
@@ -131,41 +140,42 @@ USAGE $0 -t brh input_blast_table > output
 		chomp;
 		next if $_ =~ m/^#/;
 		my @a = split(/\t/, $_);
+		next if $a[0] eq $a[1];
 		# query_name \\t hit_name \\t hit_description \\t score \\t significance
 		if (defined $id_best{$a[0]}{'id'}) {
 			if ($a[4] < $id_best{$a[0]}{'e'}) {
 				$id_best{$a[0]}{'id'}= $a[1];
-				$id_best{$a[0]}{'e'} = $a[4];
-				$id_best{$a[0]}{'s'} = $a[3];
+				$id_best{$a[0]}{'e'} = $a[$e_col];
+				$id_best{$a[0]}{'s'} = $a[$s_col];
 			} elsif ($a[4] == $id_best{$a[0]}{'e'}) {
 				if ($a[3] > $id_best{$a[0]}{'s'} ) {
 					$id_best{$a[0]}{'id'}= $a[1];
-					$id_best{$a[0]}{'e'} = $a[4];
-					$id_best{$a[0]}{'s'} = $a[3];
+					$id_best{$a[0]}{'e'} = $a[$e_col];
+					$id_best{$a[0]}{'s'} = $a[$s_col];
 				}
 			}
 		} else {
 			$id_best{$a[0]}{'id'}= $a[1];
-			$id_best{$a[0]}{'e'} = $a[4];
-			$id_best{$a[0]}{'s'} = $a[3];
+			$id_best{$a[0]}{'e'} = $a[$e_col];
+			$id_best{$a[0]}{'s'} = $a[$s_col];
 		}
 
 		if (defined $id_best{$a[1]}{'id'}) {
 			if ($a[4] < $id_best{$a[1]}{'e'}) {
 				$id_best{$a[1]}{'id'}= $a[0];
-				$id_best{$a[1]}{'e'} = $a[4];
-				$id_best{$a[1]}{'s'} = $a[3];
+				$id_best{$a[1]}{'e'} = $a[$e_col];
+				$id_best{$a[1]}{'s'} = $a[$s_col];
 			} elsif ($a[4] == $id_best{$a[1]}{'e'}) {
 				if ($a[3] > $id_best{$a[1]}{'s'} ) {
 					$id_best{$a[1]}{'id'}= $a[0];
-					$id_best{$a[1]}{'e'} = $a[4];
-					$id_best{$a[1]}{'s'} = $a[3];
+					$id_best{$a[1]}{'e'} = $a[$e_col];
+					$id_best{$a[1]}{'s'} = $a[$s_col];
 				}
 			}
 		} else {
 			$id_best{$a[1]}{'id'}= $a[0];
-			$id_best{$a[1]}{'e'} = $a[4];
-			$id_best{$a[1]}{'s'} = $a[3];
+			$id_best{$a[1]}{'e'} = $a[$e_col];
+			$id_best{$a[1]}{'s'} = $a[$e_col];
 		}
 	}
 	$in->close;
