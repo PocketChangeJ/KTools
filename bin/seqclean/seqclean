@@ -2,7 +2,7 @@
 use strict;
 use Getopt::Std;
 use FindBin;
-use lib "$FindBin::Bin"; #just add the current script directory to the lib directory
+use lib "$FindBin::RealBin"; #just add the current script directory to the lib directory
 use Mailer;
 
 my $usage = q/
@@ -92,6 +92,28 @@ foreach my $vdb (@vecdbs) {
   $vdb=~s{^\./}{};
   $vdb=$wrkdir.'/'.$vdb unless $vdb=~m{^/};
   $vdb.=$noflt;
+
+  # Check if the user has the vector file indexed.
+  
+    if( ! -f $vdb.'.nin' ){
+        flog("Vector databases are not indexed. Trying to index them now ...");
+        system("formatdb -p F -i $vdb");
+        if( $? ){
+            flog("... failed !\n");
+            die("Failed to index the vector databases!");
+        }
+        else{
+            flog("... ok\n");
+        }
+    }
+    elsif( ! -r $vdb.'.nin' ){
+        flog("Vector database index ${vdb}.nin is not readable ! ");
+        die("Please make sure ${vdb}.nin file is readable. Bail out now.");
+    }
+    elsif( -z $vdb.'.nin'){
+        flog("Vector database ${vdb}.nin has zero size !");
+        die("Please check the index ${vdb}.nin. Apparently something went wrong during indexing since it appears to have a zero size. Bail out now.");
+    }
   }
 &flog("* Using trimming files:\n ",join("\n ",@vecdbs)) if @vecdbs;
 
