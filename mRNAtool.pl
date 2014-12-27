@@ -51,6 +51,32 @@ else	{ usage($version); }
 #################################################################
 # kentnf: subroutine for denovo pipeline			#
 #################################################################
+
+=head2
+ rnaseq_seqclean: clean
+=cut
+sub rnaseq_seqclean
+{
+	my ($options, $files) = @_;
+	
+	my $usage = qq'
+USAGE: $0 -t seqclean contamination_seq input_seq
+	
+';
+	print $usage and exit unless (@$files == 2);
+	my $seqclean_bin = $FindBin::RealBin."/bin/seqclean/seqclean";
+	die "[ERR]seqclean not exist\n" unless -s $seqclean_bin;
+
+	print qq'
+Please run below command to remove rRNA for de novo project:
+$seqclean_bin $$files[1] -s $$files[0] -c 15 -l 200 -o seqclean_output_cycle1
+	-s rRNA sequence file (rRNA_silva111)
+	-l min seq length (seq will be discard short than -l)
+	-c cpu number
+
+';
+	exit;
+}
 =head2
  rnaseq_Dassem: denovo assembly using trinity
 =cut
@@ -1269,6 +1295,7 @@ USAGE: $0 -t [tool] [options] input file
 	denovo		denovo assembly using Trinity
 	ctgFeature	generate feature file from contigs
 	annotate	function annotation by AHRD (blast is not inlude)	
+	seqclean	remove contamination using seqclean
 
 '; 
 
