@@ -42,9 +42,10 @@ elsif   ($options{'t'} eq 'Rassembly')  { rnaseq_Rassem(\%options, \@ARGV);}    
 elsif   ($options{'t'} eq 'mapping')	{ rnaseq_map(\%options, \@ARGV);   }	# align read to cDNA reference
 elsif   ($options{'t'} eq 'ctgFeature')	{ rnaseq_ctgFeature(\%options, \@ARGV);}# generate feature bed for reads aligned to cDNA reference		
 elsif	($options{'t'} eq 'blastn')	{ rnaseq_map(\%options, \@ARGV);   }	# blast assembled contigs to nt to remove contanmiantion
-elsif   ($options{'t'} eq 'seqclean')	{ rnaseq_seqclean(\%options, \@ARGV);}  # clean assembled contigs using seqclean
+elsif   ($options{'t'} eq 'novoclean')	{ rnaseq_novoclean(\%options, \@ARGV);}  # clean assembled contigs using seqclean
 elsif	($options{'t'} eq 'translate')	{ rnaseq_translate(\%options, \@ARGV);} # translate EST to protein
 elsif   ($options{'t'} eq 'annotate')   { rnaseq_annotate(\%options, \@ARGV);}  # generate annotation command by AHRD
+elsif   ($options{'t'} eq 'fixanno')  	{ rnaseq_fixanno(\%options, \@ARGV);} 	# fix annotation command by AHRD
 elsif	($options{'t'} eq 'pipeline')	{ pipeline(); }				# print pipelines
 else	{ usage($version); } 
 
@@ -53,26 +54,39 @@ else	{ usage($version); }
 #################################################################
 
 =head2
- rnaseq_seqclean: clean
+ rnaseq_novoclean: clean contamination after de novo assembly 
 =cut
-sub rnaseq_seqclean
+sub rnaseq_novoclean
 {
 	my ($options, $files) = @_;
 	
 	my $usage = qq'
-USAGE: $0 -t seqclean contamination_seq input_seq
-	
+USAGE: $0 -t novoclean Trinity_kn.fasta
+* this tool is not a script like others, but a pipeline description.  
+
+
 ';
 	print $usage and exit unless (@$files == 2);
 	my $seqclean_bin = $FindBin::RealBin."/bin/seqclean/seqclean";
 	die "[ERR]seqclean not exist\n" unless -s $seqclean_bin;
 
 	print qq'
-Please run below command to remove rRNA for de novo project:
+$usage
+
+# A. remove contamination by blastn
+\$blastTool.pl 
+  [integrade honghe blast method to this method]
+
+# B. remove reads without complete degradation for strand specific samples. 
+
+# C. remove rRNA for de novo asembled transcripts:
 $seqclean_bin $$files[1] -s $$files[0] -c 15 -l 200 -o seqclean_output_cycle1
 	-s rRNA sequence file (rRNA_silva111)
 	-l min seq length (seq will be discard short than -l)
 	-c cpu number
+
+# D. remove duplication
+	\$ iAssembler.pl
 
 ';
 	exit;
@@ -368,7 +382,108 @@ output: $output_file
 ';
 
 	# run AHRD
-	run_cmd("java -Xmx20g -jar $ahrd_fdr/ahrd.jar $temp_ahrd_yml");
+	run_cmd("java -Xmx20g -jar $ahrd_fdr/ahrd.jar $temp_ahrd_yml") unless -s $output_file;
+}
+
+=head2
+ rnaseq_fixanno: fix ahrd annotation result
+=cut
+sub rnaseq_fixanno
+{
+	my ($options, $files) = @_;
+        my $usage = qq'
+USAGE: $0 -t fixanno [options] input_blast1 input_blast2 ... input_blastN
+	-a ahrd_file (output of ahrd annotation)
+	-e evalue (report blast hit report) [default: 1e-5]
+
+';
+
+	print $usage and exit unless $$files[0];
+	foreach my $blast ( @$files ) {
+		die "[ERR]blast file not exist: $blast\n" unless -s $blast;
+	}
+
+
+	my $evalue = 1e-5;
+	$evalue = $$options{'e'} if (defined $$options{'e'} && $$options{'e'} > 0);
+
+	my $ahrd_result;
+	$ahrd_result = $$options{'a'} if defined $$options{'a'};
+	die "[ERR]ahrd file not exist: $ahrd_result\n" unless -s $ahrd_result;
+	$evalue = 'NA' if $ahrd_result;	# disable evalue cutoff
+
+	# main: put blast hit to hash
+	# key: protein/transcript ID
+	# value: hit
+	my %id_hit;
+	my $id_hit = \%id_hit;
+	foreach my $blast ( @$files )
+	{
+        	print "Parsing blast file: $blast ....\n";
+	        $id_hit = parse_blast($blast, $id_hit, $evalue);
+	}
+
+	# parse ahrd result
+	if (defined $ahrd_result) {
+
+		my $out = IO::File->new(">".$ahrd_result.".fixed") || die $!;
+		my $fh = IO::File->new($ahrd_result) || die $!;
+		for (1 .. 3) {
+	        	my $line = <$fh>;
+		        print $out $line;
+		}
+
+		while(<$fh>)
+		{
+		        chomp;
+		        # Protein-Accession     Blast-Hit-Accession     AHRD-Quality-Code       Human-Readable-Description      Interpro-ID (Description)       Gene-Ontology-ID (Name)
+	        	my @a = split(/\t/, $_);
+		        my $id = $a[0];
+			$a[3] = "No hit" unless defined $$id_hit{$id};
+		        print $out join("\t", @a)."\n";
+		}
+		$fh->close;
+		$out->close;
+	}
+	print "done\n";
+}
+
+# parse blast reulst 
+sub parse_blast
+{
+        my ($blast, $id_hit, $evalue) = @_;
+
+        my ($hit_num, $query_name);
+	my $query_hit_num = 0;
+        my $in = Bio::SearchIO->new(-format=>'blast', -file=>$blast);
+        while(my $result = $in->next_result)
+        {
+                $hit_num = 0;
+                $query_name = $result->query_name;
+                while(my $hit = $result->next_hit)
+                {
+			if ($evalue eq 'NA') {
+				if ($query_name ne $hit->name) {
+					$hit_num++;
+				}
+			}
+			else
+			{
+				if (($query_name ne $hit->name) && ($hit->significance < $evalue)) {
+                                	$hit_num++;
+				}
+                        }
+                }
+
+                if ($hit_num > 0)
+                {
+                        $$id_hit{$query_name} = 1;
+			$query_hit_num++;
+                }
+        }
+
+	print "No. of hit for $blast: $query_hit_num\n";
+        return $id_hit;
 }
 
 #################################################################
@@ -1295,7 +1410,8 @@ USAGE: $0 -t [tool] [options] input file
 	denovo		denovo assembly using Trinity
 	ctgFeature	generate feature file from contigs
 	annotate	function annotation by AHRD (blast is not inlude)	
-	seqclean	remove contamination using seqclean
+	fixanno		fix ahrd annotation or report blast hits
+	novoclean	remove contamination after denovo assembly
 
 '; 
 
