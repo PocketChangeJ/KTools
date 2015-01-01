@@ -215,6 +215,8 @@ USAGE: $0 -t rmadp [options] -s adapter_sequence  input_file1 ... input_fileN
 				} elsif (length($trimmed_seq) < 15 ) {
 					$label.=",short";
 					$short_num++;
+				} elsif ( $pos_3p == length($seq) ) {
+					# do nothing
 				} else {
 					$clean_num++;
 					if (defined $adp_5p && defined $adp_3p && $pos_5p > 0 && $pos_3p > 0) {
