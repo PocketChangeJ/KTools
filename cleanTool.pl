@@ -102,6 +102,9 @@ output_file_name2 [tab] bacode2
 		$qul = <$in2>;   chomp($qul);
 
 		# compare seq with barcode
+		my $best_mismatch = 3;
+		my %best_tag_result = ();
+
 		foreach my $elements ( @barcode ) {
         		my $len = length($elements);
 			next if length($seq) < $len;
@@ -121,9 +124,17 @@ output_file_name2 [tab] bacode2
 			else 
 			{
 				my $mismatch = hamming($read_substr, $elements);
-				$tag_result.= "%".$elements if $mismatch <= $cutoff;
+				if ($mismatch <= $cutoff) {
+					$best_mismatch = $mismatch if ($mismatch < $best_mismatch);
+					if (defined $best_tag_result{$mismatch}) {
+						$best_tag_result{$mismatch}.= "%".$elements;
+					} else {
+						$best_tag_result{$mismatch} = "%".$elements;
+					}
+				}
 			}
 		}
+		$tag_result = $best_tag_result{$best_mismatch} if $cutoff > 0;
 
 		if($tag_result eq "") { 				# Print unmatch seq.
 			print $out1 $id1."\n".$seq."\n".$id2."\n".$qul."\n";
