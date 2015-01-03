@@ -36,7 +36,7 @@ sub clean_barcode
 {
 	my ($options, $files) = @_;
 	my $usage = qq'
-USAGE $0 -t barcode  barcode_file input_reads
+USAGE $0 -t barcode -m mismatch(default:0) barcode_file input_reads
 
 * format of barcode file
 output_file_name1 [tab] bacode1
@@ -49,6 +49,9 @@ output_file_name2 [tab] bacode2
 	my ($barcode_file, $input_file) = ($$files[0], $$files[1]);
 	print "[ERR]no file $barcode_file\n" and exit unless -s $barcode_file;
 	print "[ERR]no file $input_file\n" and exit unless -s $input_file;
+
+	my $cutoff = 0;
+	$cutoff = $$options{'m'} if (defined $$options{'m'} && $$options{'m'} < 3);
 	
 	# define output file
 	my $pre_name = $input_file;
@@ -103,13 +106,23 @@ output_file_name2 [tab] bacode2
         		my $len = length($elements);
 			next if length($seq) < $len;
 			my $read_substr = substr($seq, 0, $len);
-			my $m = 0;
-                	for( my $i = 0; $i< $len; $i++ ) {
-                        	if(substr($elements, $i, 1) eq substr($read_substr, $i, 1) ) {
-					$m++;
-                        	}
+
+			# old method 
+			if ($cutoff == 0) {
+				my $m = 0;
+                		for( my $i = 0; $i< $len; $i++ ) {
+                        		if(substr($elements, $i, 1) eq substr($read_substr, $i, 1) ) {
+						$m++;
+                        		}
+				}
+				$tag_result.= "%".$elements if $m == $len;
+			} 
+			# new method, haming distance
+			else 
+			{
+				my $mismatch = hamming($read_substr, $elements);
+				$tag_result.= "%".$elements if $mismatch <= $cutoff;
 			}
-			$tag_result.= "%".$elements if $m == $len;
 		}
 
 		if($tag_result eq "") { 				# Print unmatch seq.
@@ -140,6 +153,8 @@ output_file_name2 [tab] bacode2
 	print $ambiguous_file."\t".$ambiguous_num."\n";
 	print $unmatch_file."\t".$unmatch_num."\n";
 }
+
+sub hamming($$) { length( $_[ 0 ] ) - ( ( $_[ 0 ] ^ $_[ 1 ] ) =~ tr[\0][\0] ) }
 
 =head2
  trimo -- clean reads using trimmomatic
