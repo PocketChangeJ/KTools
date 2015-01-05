@@ -51,6 +51,7 @@ USAGE: $0 -t rmadp [options] -s adapter_sequence  input_file1 ... input_fileN
 	-l	3p adapter length (5-11) (default: 9)
 	-d	distance between 3p adater and sRNA (default: 1)
 
+* support gz file for input
 * the 5p adapter will perform perfect match 
 
 ';

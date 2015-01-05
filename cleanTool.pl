@@ -30,6 +30,44 @@ else	{ usage($version); }
 
 
 =head2
+ barcode_unmatch -- 
+=cut
+sub clean_barcode_unmatch
+{
+	my ($options, $files) = @_;
+	my $usage = qq'
+USAGE $0 -t barcode_unmatch -n [barcode length] unmatch.txt > report_unmatch_barcode.txt
+
+ * the default length is 6
+ 
+';
+
+	print $usage and exit unless defined $$files[0];
+	my $unmatch_file = $$files[0];
+	die "[ERR]file not exist\n" unless -s $unmatch_file;
+
+	my $barcode_length = 6;
+
+	my %h; # key: barcode, value: count
+	my $fh = IO::File->new($unmatch_file) || die $!;
+	while(<$fh>)
+	{
+        	my $id = $_;		chomp($id);
+        	my $seq = <$fh>;	chomp($seq);
+		if ($id =~ /^@/) { <$fh>; <$fh>; }
+		elsif ($id =~ m/^>/) { } 
+		else { die "[ERR]seq format: $id\t$seq\n"; }
+        	my $sub = substr($seq, 0, 8);
+        	$h{$sub}++ if defined $h{$sub};
+		$h{$sub} = 1;
+	}
+
+	foreach my $s (sort keys %h) {
+        	print $s."\t".$h{$s}."\n";
+	}
+}
+
+=head2
  barcode -- split reads according to barcode, remove barcode
 =cut
 sub clean_barcode
@@ -134,7 +172,7 @@ output_file_name2 [tab] bacode2
 				}
 			}
 		}
-		$tag_result = $best_tag_result{$best_mismatch} if $cutoff > 0;
+		$tag_result = $best_tag_result{$best_mismatch} if ($cutoff > 0 && $best_mismatch < 3);
 
 		if($tag_result eq "") { 				# Print unmatch seq.
 			print $out1 $id1."\n".$seq."\n".$id2."\n".$qul."\n";
