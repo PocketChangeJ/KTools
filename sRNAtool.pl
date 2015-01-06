@@ -81,7 +81,13 @@ USAGE: $0 -t rmadp [options] -s adapter_sequence  input_file1 ... input_fileN
 
 	my $report_file = 'report_sRNA_trim.txt';
 	print "[ERR]report file exist\n" if -s $report_file;
-	my $report_info = "#sRNA\ttotal\t5Punmatch\t5Pnull\t5Pmatch\t3Punmatch\t3Pnull\t3Pmatch\tbaseN\tshort\tcleaned\tadp\tadp5\tadp3\n";
+
+	my $report_info = qq'
+# 
+# adp: cleaned reads by both 3p and 5p adapters
+# adp5/3: cleaned reads by 3p or 5p adapter
+';
+	$report_info.= "#sRNA\ttotal\t5Punmatch\t5Pnull\t5Pmatch\t3Punmatch\t3Pnull\t3Pmatch\tbaseN\tshort\tcleaned\tadp\tadp5\tadp3\n";
 
 	foreach my $inFile ( @$files ) 
 	{
@@ -204,7 +210,7 @@ USAGE: $0 -t rmadp [options] -s adapter_sequence  input_file1 ... input_fileN
 				}
 			}
 
-			if ($pos_3p > $pos_5p)
+			if ( ($pos_3p > $pos_5p) && ($label !~ m/3p_null/) && ($label !~ m/3p_unmatch/) && ($label !~ m/5p_null/) )
 			{
 				my $trimmed_len = $pos_3p - $pos_5p;
 				my $trimmed_seq = substr($seq, $pos_5p, $trimmed_len);
@@ -216,8 +222,6 @@ USAGE: $0 -t rmadp [options] -s adapter_sequence  input_file1 ... input_fileN
 				} elsif (length($trimmed_seq) < 15 ) {
 					$label.=",short";
 					$short_num++;
-				} elsif ( $pos_3p == length($seq) ) {
-					# do nothing
 				} else {
 					$clean_num++;
 					if (defined $adp_5p && defined $adp_3p && $pos_5p > 0 && $pos_3p > 0) {
@@ -234,7 +238,7 @@ USAGE: $0 -t rmadp [options] -s adapter_sequence  input_file1 ... input_fileN
 						print $out1 ">".$id1."\n".$trimmed_seq."\n";
 					}
 				}
-			}
+			} 
 
 			$label =~ s/^,//;
 			$total_num++;
@@ -758,7 +762,8 @@ USAGE: $0 lengthd [options]
 
 	print $subUsage and exit unless $$options{'i'};
 	my $input_seq = $$options{'i'};
-	my $key = $input_seq; $key =~ s/\..*$//;
+	my $key = $input_seq; 
+	$key =~ s/\.fastq//; $key =~ s/\.fq//; $key =~ s/\.fasta//; $key =~ s/\.fasta//;
 	my $output_table = $key.".table";
 	my $output_plots = $key.".pdf";
 	my $output_image = $key.".png";

@@ -20,8 +20,8 @@ unless (defined $options{'t'} ) { usage($version); }
 
 if	($options{'t'} eq 'trimo')	{ clean_trimo(\%options, \@ARGV); }	# parse multi dataset
 elsif	($options{'t'} eq 'align')	{ clean_align(\%options, \@ARGV); }	# parse multi dataset
-elsif   ($options{'t'} eq 'sRNA')	{ clean_sRNA(\%options, \@ARGV); }
 elsif	($options{'t'} eq 'barcode')	{ clean_barcode(\%options, \@ARGV); }
+elsif   ($options{'t'} eq 'bunmatch')	{ clean_barcode_unmatch(\%options, \@ARGV); }	# parse unmatch barcode file
 elsif   ($options{'t'} eq 'pipeline')	{ pipeline(); }
 else	{ usage($version); }
 #################################################################
@@ -41,12 +41,12 @@ USAGE $0 -t barcode_unmatch -n [barcode length] unmatch.txt > report_unmatch_bar
  * the default length is 6
  
 ';
-
 	print $usage and exit unless defined $$files[0];
 	my $unmatch_file = $$files[0];
 	die "[ERR]file not exist\n" unless -s $unmatch_file;
 
 	my $barcode_length = 6;
+	$barcode_length = $$options{'n'} if (defined $$options{'n'} && $$options{'n'} > 0);
 
 	my %h; # key: barcode, value: count
 	my $fh = IO::File->new($unmatch_file) || die $!;
@@ -57,14 +57,31 @@ USAGE $0 -t barcode_unmatch -n [barcode length] unmatch.txt > report_unmatch_bar
 		if ($id =~ /^@/) { <$fh>; <$fh>; }
 		elsif ($id =~ m/^>/) { } 
 		else { die "[ERR]seq format: $id\t$seq\n"; }
-        	my $sub = substr($seq, 0, 8);
+        	my $sub = substr($seq, 0, $barcode_length);
         	$h{$sub}++ if defined $h{$sub};
-		$h{$sub} = 1;
+		$h{$sub} = 1 unless defined $h{$sub};
 	}
 
+	# convert %h to %c
+	# key: count, value: array of barcode
+	my %c;
 	foreach my $s (sort keys %h) {
-        	print $s."\t".$h{$s}."\n";
+		my $count = $h{$s};
+		if (defined $c{$count}) {
+			$c{$count}.= "\t".$s;
+		} else {
+			$c{$count} = $s;
+		}
 	}
+
+	# output result
+	foreach my $count (sort {$b<=>$a} keys %c) {
+		my @b = split(/\t/, $c{$count});
+		foreach my $b (@b) {
+			print "$b\t$count\n";
+		}
+	}
+	
 }
 
 =head2
@@ -287,14 +304,6 @@ sub clean_align
 }
 
 =head2
- clean -- clean sRNA reads
-=cut
-sub clean_sRNA
-{
-
-}
-
-=head2
  usage: print usage information
 =cut
 sub usage
@@ -304,6 +313,7 @@ USAGE: $0 -t [tool] [options] input file
 
 	trimo		trim adapter, low quality, and short reads using trimmomatic.	
 	barcode		remove barcode and split file according to barcode
+	bunmatch	count the number of unmatched barcode
 
 ';
 	exit;
