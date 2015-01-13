@@ -86,18 +86,6 @@ sampleNameA [tab] sampleNameB
 	my $add_pileup = 1;
 
 	#################################################################
-	# load comparison file to hash					#
-	# hash $cultivar						#
-	# key: cultivar name; value: 1					#
-	# hash $comparison						#
-	# key: cultivarA \t cultivarB; value: 1				#
-	#								#
-	# check cultivars exist in comparison file			#
-	#################################################################
-	my ($cultivar, $comparison) = load_comparison($comparison_file);
-	my $error = check_comparison($input_list, $cultivar); die if $error;
-
-	#################################################################
 	# check if the genome is indexed by bwa				#
 	# check if the genome is indexed by samtools faidx		#
 	# generate chrOrder file base one genome sequences		#
@@ -117,8 +105,20 @@ sampleNameA [tab] sampleNameB
 	#################################################################
 	my $script_bin = ${FindBin::RealBin}."/bin/SNPmao";
 
-	if (-s $comparison_file)
+	if ( defined $comparison_file && -s $comparison_file)
 	{
+		#########################################################
+		# load comparison file to hash				#
+		# hash $cultivar					#
+		# key: cultivar name; value: 1				#
+		# hash $comparison					#
+		# key: cultivarA \t cultivarB; value: 1			#
+		# check cultivars exist in comparison file 		#
+		#########################################################
+
+		my ($cultivar, $comparison) = load_comparison($comparison_file);
+		my $error = check_comparison($input_list, $cultivar); die if $error;
+
 		foreach my $comparison (sort keys %$comparison)
 		{
 			my ($cultivarA, $cultivarB) = split(/\t/, $comparison);
@@ -137,8 +137,6 @@ sampleNameA [tab] sampleNameB
 				#system($cmd_combine2PileFiles) && die "Error in command: $cmd_combine2PileFiles\n";
 				#(input_output)	
 			}
-
-
 		}
 	}
 
