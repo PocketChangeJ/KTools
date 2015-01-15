@@ -314,32 +314,38 @@ sub filter_MultiHits
 =cut
 sub filter_EditDistanceCutoff
 {
-	my ($sam_file_in, $sam_file_out, $filter_editDistanceCutoff) = @_;
+	my ($sam_file_in, $sam_file_out, $editDistanceCutoff) = @_;
 
+	my ($left_clip, $right_clip, $length, $ed);
 	my $out = IO::File->new(">".$sam_file_out) || die "Can not open output sam file $!\n";
 	my $in = IO::File->new($sam_file_in) || die "Can not open input sam file $!\n";
 	while(<$in>)
 	{
-		if (m/^@/) {
-			print $out $_;
-		} else {
-			chomp;
-			my @a  = split(/\t/, $_);
-			my $print = 0;
-			for (my $col = 11; $col<scalar(@a); $col++) 
-			{
-				if ( $a[$col] =~ m/NM:i:(\d+)$/) 
-				{
-					my $edit_distance = $1;
-					if ($edit_distance <= $filter_editDistanceCutoff) {
-						$print = 1;
-					}
-				}
-			}
+		chomp;
+		next if $_ =~ m/^@/;
+		my @a  = split(/\t/, $_);
 
-			if ($print == 1) {
-				print $out $_."\n";
-			}
+		# get edit distance;
+		$ed = 'NA';
+		for (my $col = 11; $col<scalar(@a); $col++)  {
+			$ed = $1 if $a[$col] =~ m/NM:i:(\d+)$/;
+		}
+		warn "[WARN]no edit distance: $_\n" if $ed eq 'NA';
+
+		# trim soft/hard clip
+		($left_clip, $right_clip) = (0,0);
+		$left_clip = $1 if (($a[5] =~ m/^(\d)S/) || ($a[5] =~ m/^(\d)H/));
+		$right_clip = $1 if (($a[5] =~ m/(\d)S$/) || ($a[5] =~ m/(\d)H$/));
+		$length = length($a[9]) - $left_clip - $right_clip;
+
+		# output reads
+		if ( $editDistanceCutoff > 0 && $editDistanceCutoff < 1 ) {
+			print $out $_."\n" if ($ed / $length) <= $editDistanceCutoff;
+		}
+		elsif ( $editDistanceCutoff >= 1 || $editDistanceCutoff == 0 ) {
+			print $out $_."\n" if $ed <= $editDistanceCutoff;
+		} else {
+			die "[ERR]bad edit distance cutoff $editDistanceCutoff\n";
 		}
 	}
 	$in->close;

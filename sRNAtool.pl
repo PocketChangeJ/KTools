@@ -48,6 +48,7 @@ sub rmadp
 USAGE: $0 -t rmadp [options] -s adapter_sequence  input_file1 ... input_fileN
 	-s	3p adapter sequence [option if -p] [9bp at least]
 	-p	5p adapter sequence [option if -s] [9bp at least]
+	-c	length for finding chimeric reads (default:0)
 	-l	3p adapter length (5-11) (default: 9)
 	-d	distance between 3p adater and sRNA (default: 1)
 
@@ -115,6 +116,7 @@ USAGE: $0 -t rmadp [options] -s adapter_sequence  input_file1 ... input_fileN
 			$unmatch_3p_num,$null_3p_num,$match_3p_num,
 			$baseN_num,$short_num,
 			$clean_num,$adp_clean,$adp5p_clean,$adp3p_clean)=(0,0,0,0,0,0,0,0,0,0,0,0,0);
+		my ($mode_5p_a, $mode_5p_b, $mode_5p_a_match) = (0, 0, 0);
 		while(<$fh>)
 		{
 			$id1 = $_;	chomp($id1);
@@ -150,13 +152,32 @@ USAGE: $0 -t rmadp [options] -s adapter_sequence  input_file1 ... input_fileN
 			my $pos_5p = 0;
 			if (defined $adp_5p)
 			{
-				# find the position locate with longer 5p adp seed, then direct trime it
+				# find the chimera locate in 5p using longer adp seed.
+				# be careful, must analyze them before trimming
 				my $long_pre_match_end = 0;
 				my $long_match_end = 0;
-				# print "$seq, $adp_5p_sub_long, $adp_5p\n" and exit;
-				while($seq =~ /\Q$adp_5p_sub_long\E/g) {
-					$long_match_end = pos($seq) - 1;
-					$long_pre_match_end = $long_match_end + 1;
+
+				if ($long_match_end == 1) {
+					while($seq =~ /\Q$adp_5p_sub_long\E/g) {
+						$long_match_end = pos($seq) - 1;
+						$long_pre_match_end = $long_match_end + 1;
+					}
+					
+					if ($long_pre_match_end > 0) {
+                                        	my $sub1 = substr($seq, 0, $long_pre_match_end);
+						my $sub2 = substr($adp_5p, -$long_pre_match_end);
+                                        	my $mm = 'unmatch';
+                                        	if ($sub1 eq $sub2) { 
+							$mode_5p_a_match++; 
+							$mm = "match"; 
+						}
+
+						# decide how to trim 5p adp ???
+						# option 1 ; trime
+						# option 2 : keep
+						# code 
+                                        	print "$seq, $long_pre_match_end, $sub1, $sub2, $mm\n";
+					}
 				}
 
 				# find the position locate with 5 base seed
@@ -179,8 +200,13 @@ USAGE: $0 -t rmadp [options] -s adapter_sequence  input_file1 ... input_fileN
 				}
 
 				# locate the best match 
-				$pos_5p = $pre_match_end;
-				$pos_5p = $long_pre_match_end if $long_pre_match_end > $pre_match_end;
+				if ($long_pre_match_end > $pre_match_end) {
+					$pos_5p = $long_pre_match_end;
+					$mode_5p_a++;
+				} else {
+					$pos_5p = $pre_match_end;
+					$mode_5p_b++;
+				}
 			}
 
 			# read id and qul from fastq file
@@ -261,6 +287,10 @@ USAGE: $0 -t rmadp [options] -s adapter_sequence  input_file1 ... input_fileN
 			"$unmatch_5p_num\t$null_5p_num\t$match_5p_num\t".
 			"$unmatch_3p_num\t$null_3p_num\t$match_3p_num\t".
 			"$baseN_num\t$short_num\t$clean_num\t$adp_clean\t$adp5p_clean\t$adp3p_clean\n";
+
+		# debug 5p info
+		print "$inFile\t$mode_5p_a\t$mode_5p_a_match\t$mode_5p_b\n";
+
 	}
 
 	# report sRNA trim information
