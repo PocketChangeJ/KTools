@@ -46,8 +46,8 @@ sub rmadp
 	
 	my $subUsage = qq'
 USAGE: $0 -t rmadp [options] -s adapter_sequence  input_file1 ... input_fileN
-	-s	3p adapter sequence [option if -p]
-	-p	5p adapter sequence [option if -s]
+	-s	3p adapter sequence [option if -p] [9bp at least]
+	-p	5p adapter sequence [option if -s] [9bp at least]
 	-l	3p adapter length (5-11) (default: 9)
 	-d	distance between 3p adater and sRNA (default: 1)
 
@@ -60,10 +60,11 @@ USAGE: $0 -t rmadp [options] -s adapter_sequence  input_file1 ... input_fileN
 	print $subUsage and exit unless defined $$files[0];
 	foreach my $f ( @$files ) { print "[ERR]no file $f\n" and exit unless -s $$files[0]; }
 
-	my ($adp_3p, $adp_3p_len, $adp_3p_sub, $adp_5p, $adp_5p_len, $adp_5p_sub);
-	$adp_3p_len = 9;
-	$adp_5p_len = 5;
-	if (defined $$options{'s'}|| defined $$options{'p'}) { } else { print $subUsage and exit; } 
+	my ($adp_3p, $adp_3p_len, $adp_3p_sub, $adp_5p, $adp_5p_len, $adp_5p_sub, $adp_5p_len_long, $adp_5p_sub_long,);
+	$adp_3p_len = 9;	# default 3p adp length for trimming
+	$adp_5p_len = 5;	# default 5p adp length for trimming, match and 5'end match and trim
+	$adp_5p_len_long = 9;	# default 5p adp length for trimming, match and trim
+	if (defined $$options{'s'} || defined $$options{'p'}) { } else { print $subUsage and exit; } 
 	if (defined $$options{'s'}) {
 		$adp_3p = $$options{'s'};
 		print "[ERR]short adapter 3p\n" and exit if length($adp_3p) < 9;
@@ -74,10 +75,11 @@ USAGE: $0 -t rmadp [options] -s adapter_sequence  input_file1 ... input_fileN
 		$adp_5p = $$options{'p'};
 		print "[ERR]short adapter 5p\n" and exit if length($adp_5p) < 9;
 		$adp_5p_sub = substr($adp_5p, -$adp_5p_len);
+		$adp_5p_sub_long = substr($adp_5p, -$adp_5p_len_long);
 	} 
 	
 	my $distance = 1;
-	$distance = $$options{'d'} if defined $$options{'d'} && $$options{'d'} >= 0;
+	$distance = int($$options{'d'}) if defined $$options{'d'} && $$options{'d'} >= 0;
 
 	my $report_file = 'report_sRNA_trim.txt';
 	print "[ERR]report file exist\n" if -s $report_file;
@@ -148,8 +150,12 @@ USAGE: $0 -t rmadp [options] -s adapter_sequence  input_file1 ... input_fileN
 			my $pos_5p = 0;
 			if (defined $adp_5p)
 			{
-				# find the position locate with 10 base seed
-			
+				# find the position locate with longer 5p adp seed, then direct trime it
+				my $long_pre_match_end = 0;
+				while($seq =~ /\Q$adp_5p_sub_long\E/) {
+					$long_match_end = $pos($seq) - 1;
+					$long_pre_match_end = $long_match_end + 1;
+				}
 
 				# find the position locate with 5 base seed
 				my ($match_start, $match_end, $match_len, $match_seq, $match_adp, $match_5p_ed, $pre_match_end);
@@ -171,8 +177,8 @@ USAGE: $0 -t rmadp [options] -s adapter_sequence  input_file1 ... input_fileN
 				}
 
 				# locate the best match 
-
-				$pos_5p = $pre_match_end;	
+				$pos_5p = $pre_match_end;
+				$pos_5p = $long_pre_match_end if $long_pre_match_end > $pre_match_end;
 			}
 
 			# read id and qul from fastq file

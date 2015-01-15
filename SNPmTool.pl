@@ -515,8 +515,6 @@ sub remove_dup
 	print "perl $script $seq_files\n";	
 }
 
-
-
 =head2
  usage: show to to use this pipeline
 =cut
