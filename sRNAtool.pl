@@ -152,8 +152,10 @@ USAGE: $0 -t rmadp [options] -s adapter_sequence  input_file1 ... input_fileN
 			{
 				# find the position locate with longer 5p adp seed, then direct trime it
 				my $long_pre_match_end = 0;
-				while($seq =~ /\Q$adp_5p_sub_long\E/) {
-					$long_match_end = $pos($seq) - 1;
+				my $long_match_end = 0;
+				# print "$seq, $adp_5p_sub_long, $adp_5p\n" and exit;
+				while($seq =~ /\Q$adp_5p_sub_long\E/g) {
+					$long_match_end = pos($seq) - 1;
 					$long_pre_match_end = $long_match_end + 1;
 				}
 
