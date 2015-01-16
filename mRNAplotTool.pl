@@ -20,7 +20,9 @@ my $sam_file = shift || die $usage;
 
 # parse sam file
 my %seq_len;
-my %dist;
+my %dist_sens;
+my %dist_anti;
+my $max_pos = 0;
 
 open(FH, $sam_file) || die $!;
 while(<FH>)
@@ -40,23 +42,35 @@ while(<FH>)
         else
         {
                 # HWI-ST397:445:C56GJACXX:1:2316:19064:100583     0       Csa6M242200.1   757     255     101M    *       0       0       CGGATGCTGGGGAATAGTGTG
-                if ($a[1] == 0) 
-                {
-                        my $pos = $a[3] + 50;
-                        my $pos_norm = int(($pos / $seq_len{$a[2]}) * 100 );
-                        if ( defined $dist{$pos_norm} ) {
-                                $dist{$pos_norm}++;
+		my $pos = $a[3];
+		$pos = $a[3] + length($a[9]) - 1 if $a[1] == 16;
+		my $pos_norm = int(($pos / $seq_len{$a[2]}) * 100 );
+		$max_pos = $pos_norm if $pos_norm > $max_pos;
+
+		print $_."\n" if $pos_norm > 100;
+
+		if ($a[1] == 16) {
+                        if ( defined $dist_anti{$pos_norm} ) {
+                                $dist_anti{$pos_norm}++;
                         } else {
-                                $dist{$pos_norm} = 1;
+                                $dist_anti{$pos_norm} = 1;
                         }
-                }
+                } else {
+			if ( defined $dist_sens{$pos_norm} ) {
+				$dist_sens{$pos_norm}++;
+			} else {
+				$dist_sens{$pos_norm} = 1;
+			}
+		}
         }
 }
 close(FH);
 
-foreach my $pos (sort {$a<=>$b} keys %dist)
-{
-        print $pos."\t".$dist{$pos}."\n";
+for(my $i=0; $i<=$max_pos; $i++) {
+	my ($pos, $sens, $anti) = ($i, 0, 0);
+	$sens = $dist_sens{$pos} if defined $dist_sens{$pos};
+	$anti = $dist_anti{$pos} if defined $dist_anti{$pos};
+	print "$pos\t$sens\t$anti\n";
 }
 
 
