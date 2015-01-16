@@ -18,7 +18,8 @@ unless (defined $options{'t'} ) { usage($version); }
 
 # checking parameters
 
-if	($options{'t'} eq 'trimo')	{ clean_trimo(\%options, \@ARGV); }	# parse multi dataset
+if	($options{'t'} eq 'adpchk')	{ clean_adpchk(\%options, \@ARGV); }	# parse single/paired files
+elsif	($options{'t'} eq 'trimo')	{ clean_trimo(\%options, \@ARGV); }	# parse multi dataset
 elsif	($options{'t'} eq 'align')	{ clean_align(\%options, \@ARGV); }	# parse multi dataset
 elsif	($options{'t'} eq 'barcode')	{ clean_barcode(\%options, \@ARGV); }
 elsif   ($options{'t'} eq 'bunmatch')	{ clean_barcode_unmatch(\%options, \@ARGV); }	# parse unmatch barcode file
@@ -28,6 +29,86 @@ else	{ usage($version); }
 # kentnf: subroutine						#
 #################################################################
 
+=head2
+ adpchk -- check adapter for RNASeq
+=cut 
+sub clean_adpchk
+{
+	my ($options, $files) = @_;
+	my $usage = qq'
+USAGE $0 -t adpchk -y read_yeild (default:1M) input_file_R1 [input_file_R2]
+
+';
+	print $usage and exit unless defined $$files[0];
+	die "[ERR]file not exist\n" unless -s $$files[0];
+
+	my $yeild_read = 1000000;
+	$yeild_read = $$options{'y'} if defined $$options{'y'};	
+
+	# description of adapter (according to trimmomatic)
+	# +++ TruSeq2 +++
+	# AGATCGGAAGAGC TCGTATGCCGTCTTCTGCTTG 	TruSeq2_SE
+	# AGATCGGAAGAGC GTCGTGTAGGGAAAGAGTGT	TruSeq2_PE_f, PCR_Primer1_rc, Universal
+	# AGATCGGAAGAGC GGTTCAGCAGGAATGCCGAG	TruSeq2_PE_r, PCR_Primer2_rc
+	# +++ TruSeq3 +++
+	# AGATCGGAAGAGC ACACGTCTGAACTCCAGTCAC	TruSeq3_SE,PE2_rc
+	# AGATCGGAAGAGC GTCGTGTAGGGAAAGAGTGTA	TruSeq3_UniversalAdapter,PE1_rc
+
+	# description of sRNA/dRNA adapters (according to prev sRNA/dRNA dataset)
+
+
+	# +++ construct adapter hash +++
+	# key: adp name value: adp seq
+	my %adp;
+	$adp{'TruSeq2-SE'} = 'AGATCGGAAGAGCTCGT';
+	$adp{'TruSeq2-PE'} = 'AGATCGGAAGAGCGGTT';
+	$adp{'TruSeq3'}    = 'AGATCGGAAGAGCACAC';
+	$adp{'TruSeq-Uni'} = 'AGATCGGAAGAGCGTCG';
+
+	# check adapters
+	foreach my $f (@$files) {
+		warn "[WARN]file not exist\n" and next unless -s $f;
+		
+		# create adp count hash;
+		my %adp_count;
+		foreach my $adp_name (sort keys %adp) {
+			$adp_count{$adp_name} = 0;
+		}
+
+		# count adp
+		my $count = 0;
+		my $format;
+		my $fh;
+		if ($f =~ m/\.gz$/) {
+			open($fh, '-|', "gzip -cd $f") || die $!;
+		} else {
+			open($fh, $f) || die $!;
+		}
+
+		while(<$fh>) {
+			my $id1 = $_;	chomp($id1);
+			my $seq = <$fh>;chomp($seq);
+			if ( $id1=~m/^@/ ) { $format='fastq'; }
+			if ( $id1=~m/^>/ ) { $format='fasta'; }
+			if ($format eq 'fastq') { <$fh>; <$fh>; }
+			$count++;
+
+			foreach my $adp_name (sort keys %adp) {
+				my $adp_seq = $adp{$adp_name};
+				$adp_count{$adp_name}++ if $seq =~ m/\Q$adp_seq\E/;
+			}	
+
+			last if $count == $yeild_read;
+		}
+		$fh->close;
+
+		print "=== $f ===\n";
+		foreach my $adp_name (sort keys %adp_count) {
+			print $adp_name."\t".$adp_count{$adp_name}."\n";
+		}
+	}
+		
+}
 
 =head2
  barcode_unmatch -- 
@@ -311,6 +392,7 @@ sub usage
 	print qq'
 USAGE: $0 -t [tool] [options] input file
 
+	adpchk		check adapter sequence
 	trimo		trim adapter, low quality, and short reads using trimmomatic.	
 	barcode		remove barcode and split file according to barcode
 	bunmatch	count the number of unmatched barcode

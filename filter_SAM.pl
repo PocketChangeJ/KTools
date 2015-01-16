@@ -46,7 +46,7 @@ GetOptions(
 	"l=i"	=> \$filter_byreadlength,
 	"m=i"	=> \$filter_multihits,
 	"n"	=> \$filter_unalignedread,
-	"v=i"	=> \$filter_editDistanceCutoff,
+	"v=s"	=> \$filter_editDistanceCutoff,
 	"u"	=> \$filter_uniq,
 	"c"	=> \$count_read,
 );
