@@ -11,7 +11,8 @@
  C script: Linyong Mao
  Filter SAM file: Honghe Sun
  perl script: Yi Zheng
- 
+
+ 01/17/2014 filter SNP table 
  02/01/2014 parameter for remove multi-hit reads
  01/22/2014 fix bug for merge just one file, chrOrder 
  07/04/2013 init
@@ -34,13 +35,23 @@ unless (defined $options{'t'} ) { usage($version); }
 
 if      ($options{'t'} eq 'identify')	{ snp_pipeline(\%options, \@ARGV); }    # 
 elsif   ($options{'t'} eq 'filter1')	{ filter_RNASeq(@ARGV); }    		# 
-elsif   ($options{'t'} eq 'filter2')	{ filter_indel(@ARGV); }    		# 
+elsif   ($options{'t'} eq 'filter2')	{ filter_indel(@ARGV); }    		#
+elsif	($options{'t'} eq 'filterX')	{ snp_filter_table(\%options, @ARGV); }	# filter SNP combined table
 elsif	($options{'t'} eq 'pipeline')	{ pipeline(); }
 else	{ usage($version); }
 
 #################################################################
 # kentnf: subroutine						#
 #################################################################
+
+=head2
+ snp_filter_table -- identify SNP table
+=cut
+sub snp_filter_table
+{
+
+}
+
 =head2
  snp_pipeline -- identify SNP from RNASeq dataset
 =cut

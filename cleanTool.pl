@@ -55,7 +55,19 @@ USAGE $0 -t adpchk -y read_yeild (default:1M) input_file_R1 [input_file_R2]
 	# AGATCGGAAGAGC GTCGTGTAGGGAAAGAGTGTA	TruSeq3_UniversalAdapter,PE1_rc
 
 	# description of sRNA/dRNA adapters (according to prev sRNA/dRNA dataset)
+	# +++ sRNA 01 +++
+	# CTGTAGGCACCATCAAT AGATCGGAAGAGCACACGTCTGAACTCCAGTCACTCTCGTATGCCGTCTTCTGCTTG -- most common sRNA adp 
+	# CTGTAGGCACCATCAAT CT  -- XiaoFang/Silin
+	# +++ sRNA 02 +++
+	# CAGATCGGAAGAGCACACGTCTGAACTCCAGTCACATCACGAT -- Illumina Multiplexing PCR Primer 2.0
+	# +++ sRNA 03-06 +++
+	# TCGTATGCCGTCTTCTGCTTG -- wild rice
+	# TGGAATTCTCGGGTGCCAAGGAACTCCAGTCAC -- 
+	# ATCTCGTATGCCGTCTTCTGCTTG ??? 
+	# GTACCTCGTATGCCGTCTT	-- Silin
 
+	# +++ dRNA +++
+	# CTGCTGGATCGTCGGACTGTAGAACTCTG -- Ying's dRNA
 
 	# +++ construct adapter hash +++
 	# key: adp name value: adp seq
@@ -64,6 +76,13 @@ USAGE $0 -t adpchk -y read_yeild (default:1M) input_file_R1 [input_file_R2]
 	$adp{'TruSeq2-PE'} = 'AGATCGGAAGAGCGGTT';
 	$adp{'TruSeq3'}    = 'AGATCGGAAGAGCACAC';
 	$adp{'TruSeq-Uni'} = 'AGATCGGAAGAGCGTCG';
+	$adp{'sRNA01'} 	   = 'CTGTAGGCACCATCAAT';
+	$adp{'sRNA02'}     = 'CAGATCGGAAGAGCACA';
+	$adp{'sRNA03'}     = 'TCGTATGCCGTCTTCTG';
+	$adp{'sRNA04'}     = 'TGGAATTCTCGGGTGCC';
+	$adp{'sRNA05'}     = 'ATCTCGTATGCCGTCTT';
+	$adp{'sRNA06'}     = 'GTACCTCGTATGCCGTC';	
+	$adp{'dRNA01'}     = 'CTGCTGGATCGTCGGAC';
 
 	# check adapters
 	foreach my $f (@$files) {
