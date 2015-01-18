@@ -789,70 +789,76 @@ USAGE: $0 unique [options]
 =cut
 sub lengthd
 {
-	my $options = shift;
+	my ($options, $files) = @_;
 	
 	my $subUsage = qq'
-USAGE: $0 lengthd [options]
-        -i      input file 
+USAGE: $0 -t lengthd [options] input_file1 input_file2
+
         -u      input reads file is sRNA clean (default:0) / uniq (1) format
 
 ';
-
-	print $subUsage and exit unless $$options{'i'};
-	my $input_seq = $$options{'i'};
-	my $key = $input_seq; 
-	$key =~ s/\.fastq//; $key =~ s/\.fq//; $key =~ s/\.fasta//; $key =~ s/\.fasta//;
-	my $output_table = $key.".table";
-	my $output_plots = $key.".pdf";
-	my $output_image = $key.".png";
-
-	my %length_dist;
-	my $seq_num = 0;
-	my ($seq_id_info, $seq_id, $seq_desc, $format, $sequence, $seq_length, $uniq_count);
-	
-	my $fh = IO::File->new($input_seq) || die $!;
-	while(<$fh>)
-	{
-		chomp;
-		$seq_id_info = $_;
-		if      ($seq_id_info =~ m/^>/) { $format = 'fasta'; $seq_id_info =~ s/^>//; }
-		elsif   ($seq_id_info =~ m/^@/) { $format = 'fastq'; $seq_id_info =~ s/^@//; }
-		else    { die "[ERR]sRNA ID: $seq_id_info\n"; }
-		($seq_id, $seq_desc) = split(/\s+/, $seq_id_info, 2);
-		unless ($seq_desc) { $seq_desc = ""; }
+	print $subUsage and exit unless defined $$files[0];
 		
-		$sequence = <$fh>; chomp($sequence);
-		$seq_length = length($sequence);
+	my $data_type = 'clean';
+	$data_type = 'unique' if (defined $$options{'u'} && $$options{'u'} == 1);
 
-		if ($$options{'u'}) {
-			my @nn = split(/-/, $seq_id);
-			$uniq_count = $nn[scalar(@nn)-1];
-			die "[ERR]sRNA count $seq_id_info, $seq_id, $uniq_count\n" if $uniq_count < 1;
-			$seq_num = $seq_num + $uniq_count;
+	foreach my $input_seq (@$files) 
+	{
+		warn "[WARN]file not exit: $input_seq\n" unless -s $input_seq;
 
-			if ( defined $length_dist{$seq_length} ) { $length_dist{$seq_length} = $length_dist{$seq_length} + $uniq_count; }
-			else { $length_dist{$seq_length} = $uniq_count; }
-		} else {
-			$seq_num++;
+		my $key = $input_seq; 
+		$key =~ s/\.fastq//; $key =~ s/\.fq//; $key =~ s/\.fasta//; $key =~ s/\.fasta//;
+		my $output_table = $key.".table";
+		my $output_plots = $key.".pdf";
+		my $output_image = $key.".png";
 
-			if ( defined $length_dist{$seq_length} ) { $length_dist{$seq_length}++; }
-			else { $length_dist{$seq_length} = 1; }
+		my %length_dist;
+		my $seq_num = 0;
+		my ($seq_id_info, $seq_id, $seq_desc, $format, $sequence, $seq_length, $uniq_count);
+	
+		my $fh = IO::File->new($input_seq) || die $!;
+		while(<$fh>)
+		{
+			chomp;
+			$seq_id_info = $_;
+			if      ($seq_id_info =~ m/^>/) { $format = 'fasta'; $seq_id_info =~ s/^>//; }
+			elsif   ($seq_id_info =~ m/^@/) { $format = 'fastq'; $seq_id_info =~ s/^@//; }
+			else    { die "[ERR]sRNA ID: $seq_id_info\n"; }
+			($seq_id, $seq_desc) = split(/\s+/, $seq_id_info, 2);
+			unless ($seq_desc) { $seq_desc = ""; }
+		
+			$sequence = <$fh>; chomp($sequence);
+			$seq_length = length($sequence);
+
+			if ($data_type eq 'unique') {
+				my @nn = split(/-/, $seq_id);
+				$uniq_count = $nn[scalar(@nn)-1];
+				die "[ERR]sRNA count $seq_id_info, $seq_id, $uniq_count\n" if $uniq_count < 1;
+				$seq_num = $seq_num + $uniq_count;
+
+				if ( defined $length_dist{$seq_length} ) { $length_dist{$seq_length} = $length_dist{$seq_length} + $uniq_count; }
+				else { $length_dist{$seq_length} = $uniq_count; }
+			} else {
+				$seq_num++;
+
+				if ( defined $length_dist{$seq_length} ) { $length_dist{$seq_length}++; }
+				else { $length_dist{$seq_length} = 1; }
+			}
+
+			if ($format eq 'fastq') { <$fh>; <$fh>; }
 		}
+		$fh->close;
 
-		if ($format eq 'fastq') { <$fh>; <$fh>; }
-	}
-	$fh->close;
+		# output lengt distribution tables
+		my $out = IO::File->new(">".$output_table) || die "Can not open output table file $output_table $!\n";
+		foreach my $len (sort keys %length_dist) {
+			my $freq = sprintf('%.4f', $length_dist{$len}/$seq_num);
+			$freq = $freq * 100;
+			print $out "$len\t$length_dist{$len}\t$freq\n";
+		}
+		$out->close;	
 
-	# output lengt distribution tables
-	my $out = IO::File->new(">".$output_table) || die "Can not open output table file $output_table $!\n";
-	foreach my $len (sort keys %length_dist) {
-		my $freq = sprintf('%.4f', $length_dist{$len}/$seq_num);
-		$freq = $freq * 100;
-		print $out "$len\t$length_dist{$len}\t$freq\n";
-	}
-	$out->close;	
-
-	# R code for length distribution
+		# R code for length distribution
 my $R_LD =<< "END";
 a<-read.table("$output_table")
 x<-a[,1]
@@ -863,13 +869,14 @@ barplot(table(dat)/sum(table(dat)), col="lightblue", xlab="Length(nt)", ylab="Fr
 invisible(dev.off())
 END
 
-	open R,"|/usr/bin/R --vanilla --slave" or die $!;
-	print R $R_LD;
-	close R;	
+		open R,"|/usr/bin/R --vanilla --slave" or die $!;
+		print R $R_LD;
+		close R;	
 
-	# convert pdf file to png
-	my $cmd_convert = "convert $output_plots $output_image";
-	system($cmd_convert) && die "[ERR]CMD: $cmd_convert\n";
+		# convert pdf file to png
+		my $cmd_convert = "convert $output_plots $output_image";
+		system($cmd_convert) && die "[ERR]CMD: $cmd_convert\n";
+	}
 }
 
 =head2
