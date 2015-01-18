@@ -36,7 +36,7 @@ unless (defined $options{'t'} ) { usage($version); }
 if      ($options{'t'} eq 'identify')	{ snp_pipeline(\%options, \@ARGV); }    # 
 elsif   ($options{'t'} eq 'filter1')	{ filter_RNASeq(@ARGV); }    		# 
 elsif   ($options{'t'} eq 'filter2')	{ filter_indel(@ARGV); }    		#
-elsif	($options{'t'} eq 'filterX')	{ snp_filter_table(\%options, @ARGV); }	# filter SNP combined table
+elsif	($options{'t'} eq 'filterX')	{ snp_filter_table(\%options, \@ARGV); }	# filter SNP combined table
 elsif	($options{'t'} eq 'pipeline')	{ pipeline(); }
 else	{ usage($version); }
 
@@ -50,7 +50,13 @@ else	{ usage($version); }
 sub snp_filter_table
 {
 	my ($options, $files) = @_;
+
+	my $usage = qq'
+USAGE: $0 -t filterX input_combine_table > output
+
+';
 	
+	print $usage and exit unless defined $$files[0];
 	my $input_file = $$files[0];
 	die "[ERR]file not exist\n" unless -s $input_file;
 
@@ -66,7 +72,7 @@ sub snp_filter_table
 		my $pos = shift @a;
 		my $base = shift @a;
 		foreach my $a (@a) {
-			print $a."\n" and last if $a ne "N";
+			print $_."\n" and last if $a ne "N";
 		}
 	}
 	$fh->close;
