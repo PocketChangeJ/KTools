@@ -45,11 +45,31 @@ else	{ usage($version); }
 #################################################################
 
 =head2
- snp_filter_table -- identify SNP table
+ snp_filter_table -- filter raw snp table
 =cut
 sub snp_filter_table
 {
+	my ($options, $files) = @_;
+	
+	my $input_file = $$files[0];
+	die "[ERR]file not exist\n" unless -s $input_file;
 
+	my $fh = IO::File->new($input_file) || die $!;
+	my $title = <$fh>;
+	print $title;
+	while(<$fh>)
+	{
+		chomp;
+		next if $_ =~ m/^#/;
+		my @a = split(/\t/, $_);
+		my $ref_id = shift @a;
+		my $pos = shift @a;
+		my $base = shift @a;
+		foreach my $a (@a) {
+			print $a."\n" and last if $a ne "N";
+		}
+	}
+	$fh->close;
 }
 
 =head2

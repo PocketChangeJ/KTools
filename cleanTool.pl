@@ -58,7 +58,7 @@ USAGE $0 -t adpchk -y read_yeild (default:1M) input_file_R1 [input_file_R2]
 	# +++ sRNA 01 +++
 	# CTGTAGGCACCATCAAT AGATCGGAAGAGCACACGTCTGAACTCCAGTCACTCTCGTATGCCGTCTTCTGCTTG -- most common sRNA adp 
 	# CTGTAGGCACCATCAAT CT  -- XiaoFang/Silin
-	# +++ sRNA 02 +++
+	# +++ sRNA 02 +++ TrueSeq3_SE,PE2_rc+5'C ++
 	# CAGATCGGAAGAGCACACGTCTGAACTCCAGTCACATCACGAT -- Illumina Multiplexing PCR Primer 2.0
 	# +++ sRNA 03-06 +++
 	# TCGTATGCCGTCTTCTGCTTG -- wild rice
@@ -85,13 +85,19 @@ USAGE $0 -t adpchk -y read_yeild (default:1M) input_file_R1 [input_file_R2]
 	$adp{'dRNA01'}     = 'CTGCTGGATCGTCGGAC';
 
 	# check adapters
+	print "#adpName\tadpSequence\tTotalMatch\tA\tT\tC\tG\n";
+
 	foreach my $f (@$files) {
 		warn "[WARN]file not exist\n" and next unless -s $f;
 		
 		# create adp count hash;
 		my %adp_count;
 		foreach my $adp_name (sort keys %adp) {
-			$adp_count{$adp_name} = 0;
+			$adp_count{$adp_name}{'match'} = 0;
+			$adp_count{$adp_name}{'baseA'} = 0;
+			$adp_count{$adp_name}{'baseT'} = 0;
+			$adp_count{$adp_name}{'baseC'} = 0;
+			$adp_count{$adp_name}{'baseG'} = 0;
 		}
 
 		# count adp
@@ -111,10 +117,15 @@ USAGE $0 -t adpchk -y read_yeild (default:1M) input_file_R1 [input_file_R2]
 			if ( $id1=~m/^>/ ) { $format='fasta'; }
 			if ($format eq 'fastq') { <$fh>; <$fh>; }
 			$count++;
+			$seq = uc($seq);
 
 			foreach my $adp_name (sort keys %adp) {
 				my $adp_seq = $adp{$adp_name};
-				$adp_count{$adp_name}++ if $seq =~ m/\Q$adp_seq\E/;
+				$adp_count{$adp_name}{'match'}++ if $seq =~ m/\Q$adp_seq\E/;
+				$adp_count{$adp_name}{'baseA'}++ if $seq =~ m/A\Q$adp_seq\E/;
+				$adp_count{$adp_name}{'baseT'}++ if $seq =~ m/T\Q$adp_seq\E/;
+				$adp_count{$adp_name}{'baseC'}++ if $seq =~ m/C\Q$adp_seq\E/;
+				$adp_count{$adp_name}{'baseG'}++ if $seq =~ m/G\Q$adp_seq\E/;
 			}	
 
 			last if $count == $yeild_read;
@@ -123,10 +134,13 @@ USAGE $0 -t adpchk -y read_yeild (default:1M) input_file_R1 [input_file_R2]
 
 		print "=== $f ===\n";
 		foreach my $adp_name (sort keys %adp_count) {
-			print $adp_name."\t".$adp_count{$adp_name}."\n";
+			print $adp_name."\t".$adp{$adp_name}."\t".$adp_count{$adp_name}{'match'}."\t".
+				$adp_count{$adp_name}{'baseA'}."\t".
+				$adp_count{$adp_name}{'baseT'}."\t".
+				$adp_count{$adp_name}{'baseC'}."\t".
+				$adp_count{$adp_name}{'baseG'}."\n";
 		}
-	}
-		
+	}	
 }
 
 =head2
