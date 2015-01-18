@@ -37,6 +37,94 @@ else	{ usage($version); }
 #################################################################
 # kentnf: subroutine						#
 #################################################################
+
+=head2
+ sRNA_composition
+=cut
+sub sRNA_composition
+{
+	my ($options, $files) = @_;
+
+	my $subUsage = qq'
+USAGE: $0 -t composition input_sRNA_clean1 input_sRNA_clean2 ... input_sRNA_clean3 
+
+* the script will align cleaned sRNA to rRNA, tRNA, snRNA, and snoRNA, then count 
+  the length distribution of aligned reads
+
+';
+	print $subUsage and exit unless defined $$files[0];
+	die "[ERR]input file not exist\n" unless -s $$files[0]; 
+
+	my %dbs;
+	$dbs{'rRNA'}	= $FindBin::RealBin."/database/plant_rRNA";
+	$dbs{'tRNA'}	= $FindBin::RealBin."/database/plant_tRNA";
+	$dbs{'snRNA'}	= $FindBin::RealBin."/database/plant_snRNA";
+	$dbs{'snoRNA'}	= $FindBin::RealBin."/database/plant_snoRNA";
+
+	foreach my $f ( @$files )
+	{
+		# map reads to ref db, then store length dist of aligned reads to hash
+		# key: length, db
+		# value: frequency
+		my %align_length_dist;
+
+		# align reads to reference
+		foreach my $db_name (sort keys %dbs ) {
+			my $db_file = $dbs{$db_name};
+			my $cmd = "bowtie -v 1 -k 1 -p 24 -f -S $db_file $f MMM";
+			run_cmd($cmd);
+			my %length_dist = get_sam_length_dist('MMM');
+
+			foreach my $len (sort {$a<=>$b} keys %length_dist) {
+				$align_length_dist{$len}{$db_name} = $length_dist{$len};
+			}
+		}
+
+		# output alignment result 
+		my $output_file = $f."_comp.txt";
+		my $out = IO::File->new(">".$output_file) || die $!;
+		print $out "#length";
+		foreach my $db_name (sort keys %dbs) { print $out "\t".$db_name; }
+
+		foreach my $len (sort {$a<=>$b} keys %align_length_dist) {
+			print $out $len;
+			foreach my $db_name (sort keys %dbs)
+			{
+				my $count = 0;
+				$count = $align_length_dist{$len}{$db_name} if defined $align_length_dist{$len}{$db_name};
+				print $out "\t".$count;
+			}
+			print $out "\n";
+		}
+		$out->close;
+	}
+}
+
+=head2
+ get_sam_length_dist -- get length distribution from sam file
+=cut
+sub get_sam_length_dist
+{
+	my $sam_file = shift;
+
+	my %length_dist;
+	my $fh = IO::File->new($sam_file) || die $!;
+	while(<$fh>) {
+		chomp;
+		next if $_ =~ m/^@/;
+		my @a = split(/\t/, $_);
+		next if $a[1] == 4;
+		my $len = length $a[9];
+		if (defined $length_dist{$len}) {
+			$length_dist{$len}++;
+		} else {
+			$length_dist{$len} = 1;
+		}
+	}
+	$fh->close;
+	return %length_dist;
+}
+
 =head2
  rmadp -- remove adapter 
 =cut
