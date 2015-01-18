@@ -25,7 +25,7 @@ if	($options{'t'} eq 'chkadp')	{ chkadp(\%options, \@ARGV);  }
 elsif	($options{'t'} eq 'chkadp2')    { chkadp2(\%options, \@ARGV); }
 elsif	($options{'t'} eq 'rmadp')	{ rmadp(\%options, \@ARGV); }
 elsif	($options{'t'} eq 'convert')	{ convert(\%options); }
-elsif	($options{'t'} eq 'lengthd')	{ lengthd(\%options); }
+elsif	($options{'t'} eq 'lengthd')	{ lengthd(\%options, \@ARGV); }
 elsif	($options{'t'} eq 'unique' )	{ unique(\%options);  }
 elsif   ($options{'t'} eq 'norm' )	{ norm(\%options);    }
 elsif   ($options{'t'} eq 'normcut')	{ normcut(\%options); }
