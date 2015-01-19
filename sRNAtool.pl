@@ -24,6 +24,7 @@ unless (defined $options{'t'}) { usage($version); }
 if	($options{'t'} eq 'chkadp')	{ chkadp(\%options, \@ARGV);  }
 elsif	($options{'t'} eq 'chkadp2')    { chkadp2(\%options, \@ARGV); }
 elsif	($options{'t'} eq 'rmadp')	{ rmadp(\%options, \@ARGV); }
+elsif	($options{'t'} eq 'composition'){ sRNA_composition(\%options, \@ARGV); }
 elsif	($options{'t'} eq 'convert')	{ convert(\%options); }
 elsif	($options{'t'} eq 'lengthd')	{ lengthd(\%options, \@ARGV); }
 elsif	($options{'t'} eq 'unique' )	{ unique(\%options);  }
@@ -71,12 +72,12 @@ USAGE: $0 -t composition input_sRNA_clean1 input_sRNA_clean2 ... input_sRNA_clea
 		# align reads to reference
 		foreach my $db_name (sort keys %dbs ) {
 			my $db_file = $dbs{$db_name};
-			my $cmd = "bowtie -v 1 -k 1 -p 24 -f -S $db_file $f MMM";
-			run_cmd($cmd);
+			my $cmd = "bowtie -v 1 -k 1 -p 24 -S $db_file $f MMM";
+			system($cmd) && die "[ERR]CMD $cmd\n";
 			my %length_dist = get_sam_length_dist('MMM');
-
 			foreach my $len (sort {$a<=>$b} keys %length_dist) {
 				$align_length_dist{$len}{$db_name} = $length_dist{$len};
+				# print "$len\t$length_dist{$len}\n";
 			}
 		}
 
@@ -85,7 +86,7 @@ USAGE: $0 -t composition input_sRNA_clean1 input_sRNA_clean2 ... input_sRNA_clea
 		my $out = IO::File->new(">".$output_file) || die $!;
 		print $out "#length";
 		foreach my $db_name (sort keys %dbs) { print $out "\t".$db_name; }
-
+		print $out "\n";
 		foreach my $len (sort {$a<=>$b} keys %align_length_dist) {
 			print $out $len;
 			foreach my $db_name (sort keys %dbs)
@@ -97,6 +98,35 @@ USAGE: $0 -t composition input_sRNA_clean1 input_sRNA_clean2 ... input_sRNA_clea
 			print $out "\n";
 		}
 		$out->close;
+
+		# generate images
+		my $output_pdf = $f."_comp.pdf";
+		my $output_png = $f."_comp.png";
+
+		my $R_LD =<< "END";
+a<-read.delim("$output_file", header=T)
+rownames(a)<-a[,1]
+a<-a[,-1]  
+names(a)<-c("rRNA","snRNA","snoRNA","tRNA")
+a<-t(as.matrix(a))
+b<-rowSums(a)
+pdf("$output_pdf",width=18, height=18)
+par(mfrow=c(2,1))
+barplot(a, col=terrain.colors(4), beside=T, legend.text=c("rRNA","snRNA","snoRNA","tRNA"))
+barplot(a/b, col=terrain.colors(4), beside=T, legend.text=c("rRNA","snRNA","snoRNA","tRNA"))
+invisible(dev.off())
+END
+
+                open R,"|/usr/bin/R --vanilla --slave" or die $!;
+                print R $R_LD;
+                close R;
+
+                # convert pdf file to png
+		my $cmd_convert = "convert $output_pdf $output_png";
+		system($cmd_convert) && die "[ERR]CMD: $cmd_convert\n";
+		
+		# delete temp file
+		unlink("MMM");
 	}
 }
 
@@ -107,13 +137,15 @@ sub get_sam_length_dist
 {
 	my $sam_file = shift;
 
-	my %length_dist;
+	my %length_dist; my %uid;
 	my $fh = IO::File->new($sam_file) || die $!;
 	while(<$fh>) {
 		chomp;
 		next if $_ =~ m/^@/;
 		my @a = split(/\t/, $_);
 		next if $a[1] == 4;
+		next if defined $uid{$a[0]};
+		$uid{$a[0]} = 1;
 		my $len = length $a[9];
 		if (defined $length_dist{$len}) {
 			$length_dist{$len}++;
@@ -1256,6 +1288,7 @@ Command:
 	chkadp		check adapter sequence (kmer method, better for unknown adapter)
 	chkadp2		check adapter sequence (regexp method, better for known adapter)
 	rmadp		remove sRNA adapter sequence
+	composition	analyzing the composition of sRNA
 	convert		convert between table format and fastq/fasta format
 	unique		convert between unique format and clean format
 	norm	     	normalization (RPM)
