@@ -35,7 +35,7 @@ exit;
 
 while (<>) {
 	if (m/^@/) {
-		print; 
+		print $_; 
 	}else{
 		chomp; 
 		my @ta = split(/\t/, $_); 

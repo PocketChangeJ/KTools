@@ -24,7 +24,8 @@ use warnings;
 use FindBin;
 use IO::File;
 use Getopt::Std;
-
+use lib "$FindBin::RealBin/m";
+use reads;
 my $debug = 1;
 my $version = 0.1;
 
@@ -90,7 +91,7 @@ USAGE: perl $0 -t identify -r reference [options]  input_RNASeq_list
 
 	-p	thread
 	-c	comparison file
-	-e	run the script
+	-m	mode [1-5: default:1,2,3]
 
 * example of input RNASeq list
 sampleName [tab] read_file1,read_file2 [tab] read_file3 ..... read_fileN
@@ -99,50 +100,90 @@ sampleName must diff with any read file name
 read_file1,read_file2 are paired end reads
 read_file3 are single end reads
 
-* example of comparison_file
+* -c example of comparison_file
 sampleNameA [tab] sampleNameB
 
+* -m SNP mode
+1 -- generate bam file
+2 -- generate pileup file
+3 -- compare sample A and B [comparison_file required]
+4 -- compare sample and ref 
+5 -- generate 1col file 
+
 ';	
+	#my $add_pileup = 1;
+	my $debug = 1;
+
 	print $usage and exit unless defined $$files[0];
 	print "[ERR]no input RNAseq file\n" and exit unless -s $$files[0];
 	my $input_list = $$files[0];
 
-	print "[ERR]no reference\n" and exit unless defined $$options{'r'};
+	die "[ERR]undef reference\n" unless defined $$options{'r'};
 	my $genome = $$options{'r'};
+	die "[ERR]reference not exist\n" unless -s $genome;
 
-	my $comparison_file = $$options{'c'} if defined $$options{'c'};
-	
-	#################################################################
-	# init parameters and vars					#
-	#################################################################
-	my $ref_SNP_enable = 1;
-	my $reSeqPrint = 1;
+	my $comparison_file;
+	if ( defined $$options{'c'} ) {
+		die "[ERR]comparison file not exist\n" unless -s $$options{'c'};		
+		$comparison_file = $$options{'c'};
+	}
 
-	my $debug = 1;
+	my %mode = qw/1 1 2 1 3 1/; # set default mode
+	if ( defined $$options{'m'} ) {
+		my @m = split(/,/, $$options{'m'});
+		foreach my $m (@m) { $mode{$m} = 1; }
+	}
+
 	my $cpu = 24;
-	my $add_pileup = 1;
+	$cpu = $$options{'p'} if (defined $$options{'c'} && $$options{'c'} > 0);
 
-	#################################################################
-	# check if the genome is indexed by bwa				#
-	# check if the genome is indexed by samtools faidx		#
-	# generate chrOrder file base one genome sequences		#
-	#################################################################
+	# check database
+        foreach my $f ( ($genome.".amb", $genome.".ann", $genome.".bwt", $genome.".pac", $genome.".sa", $genome.".fai") ) {
+                die "[ERR]no database index: $f\n" unless -s $f;
+        }
+
+	# generate chrOrder file base one genome sequences
 	my $chrOrder_file = "chrOrder";
-	check_genome($genome, $chrOrder_file);
+	my $chrOrder_info = `grep \">\" $genome`; chomp($chrOrder_info);
+	my @co = split(/\n/, $chrOrder_info); 
+	my $out1 = IO::File->new(">".$chrOrder_file) || die $!;
+	foreach my $chrID (@co) { 
+		$chrID =~ s/^>//; $chrID =~ s/ .*//ig; 
+		print $out1 $chrID."\n";
+	}
+	$out1->close;
 
-	#################################################################
-	# generate command to produce pileup files 			#
-	#################################################################
-	my (%cmd_pileup) = generate_pileup($input_list, $genome, $cpu, $debug);
+	# check input file suffix 
+	my $fh = IO::File->new($input_list) || die $!;
+	while(<$fh>) {
+		chomp;
+		next if $_ =~ m/^#/;
+		$_ =~ s/,/\t/;
+		my @a = split(/\t/, $_);
+		shift @a;
+		foreach my $f (@a) {
+			die "[ERR]input file suffix\n" unless $f =~ m/\.fa$/;
+		}
+        }
+        $fh->close;
 
-	foreach my $cul (sort keys %cmd_pileup) { print $cmd_pileup{$cul}; }
+	# mode 1: generate bam file
+	my %cmd_pileup;
+	if (defined $mode{'1'} && $mode{'1'} == 1) {
+		%cmd_pileup = generate_bam($input_list, $genome, $cpu, $debug);
+		foreach my $cul (sort keys %cmd_pileup) { print $cmd_pileup{$cul}; }
+	}
 
-	#################################################################
-	# perform comparison analysis					#
-	#################################################################
+	# mode 2: generate pileup file
+	if (defined $mode{'2'} && $mode{'2'} == 1) {
+		
+	}
+
+
+	# mode 3: perform comparison analysis	
 	my $script_bin = ${FindBin::RealBin}."/bin/SNPmao";
 
-	if ( defined $comparison_file && -s $comparison_file)
+	if (defined $mode{'3'} && $mode{'3'} == 1)
 	{
 		#########################################################
 		# load comparison file to hash				#
@@ -161,50 +202,33 @@ sampleNameA [tab] sampleNameB
 			my ($cultivarA, $cultivarB) = split(/\t/, $comparison);
 			my ($pileupA, $pileupB) = ($cultivarA.".pileup", $cultivarB.".pileup");
 			my $script = "$script_bin/combine2PileFiles";
-			my $cmd_combine2PileFiles = "$script $pileupA $pileupB 0.9 0.8 $chrOrder_file 3";
+			run_cmd("$script $pileupA $pileupB 0.9 0.8 $chrOrder_file 3");
 
-			print $cmd_combine2PileFiles."\n";
 			my $snp_file = $pileupA."_".$pileupB.".snp";
 			my $snp_filter1 = $snp_file.".filter.txt";
 			my $snp_filter2 = $snp_file.".filter.indel.txt";
-			print "$0 -t filter1 $snp_file $snp_filter1\n";
-			print "$0 -t filter2 $snp_filter1 $snp_filter2\n";
-
-			unless ($debug) {	
-				#system($cmd_combine2PileFiles) && die "Error in command: $cmd_combine2PileFiles\n";
-				#(input_output)	
-			}
+			run_cmd("$0 -t filter1 $snp_file $snp_filter1");
+			run_cmd("$0 -t filter2 $snp_filter1 $snp_filter2");
 		}
 	}
 
-	#################################################################
-	# call SNPs between cultivar and reference			#
-	#################################################################
-	if ($ref_SNP_enable)
-	{
-		foreach my $cultivar (sort keys %cmd_pileup)
-		{
+	# mode 4:  call SNPs between cultivar and reference
+	if (defined $mode{'3'} && $mode{'3'} == 1) {
+		foreach my $cultivar (sort keys %cmd_pileup) {
 			my $pileup = $cultivar.".pileup";
 			my $script = "$script_bin/pileupFilter.AtoG";
-			my $cmd_pileupFilter = "$script 0.9 0.8 3 $pileup";
-			print $cmd_pileupFilter."\n";
-			#system($cmd_pileupFilter) && die "Error in command: $cmd_pileupFilter\n";
+			run_cmd("$script 0.9 0.8 3 $pileup");
 		}
 	}
 
-	#################################################################
-	# reSeqPrintSample virtual genome using SNP			#
-	#################################################################
-	if ($reSeqPrint)
-	{
-		foreach my $cultivar (sort keys %cmd_pileup)
-		{
+	# mode 5: reSeqPrintSample virtual genome using SNP
+	if (defined $mode{'5'} && $mode{'5'} == 1) {
+		run_cmd("$script_bin/reSeqPrintRefChr $genome RefChr.1Col");
+		foreach my $cultivar (sort keys %cmd_pileup) {
 			my $pileup = $cultivar.".pileup";
 			my $col = $cultivar.".1col";
 			my $script = "$script_bin/reSeqPrintSample.indel.fast.strAssign.RNAseq.table";
-			my $cmd_reSeqPrint = "$script $genome $col $pileup $cultivar 3 3 0.3";
-			print $cmd_reSeqPrint."\n";
-			#system($cmd_reSeqPrint) && die "Error in command: $cmd_reSeqPrint\n";
+			run_cmd("$script $genome $col $pileup $cultivar 3 3 0.3");
 		}
 	}
 }
@@ -260,44 +284,10 @@ sub check_comparison
 	return $error;
 }
 
-=head1 check_genome
- check if the genome is indexed by bwa
- check if the genome is indexed by samtools faidx
-=cut
-sub check_genome
-{
-	my ($genome, $chrOrder_file) = @_;
-	my @files = ($genome.".amb", $genome.".ann", $genome.".bwt", $genome.".pac", $genome.".sa", $genome.".fai");
-	foreach my $file (@files) 
-	{
-		unless (-s $file) { die "Error, please create genome index using bwa and samtools\n$file\n"; }
-	}
-	
-	my $out = IO::File->new(">".$chrOrder_file) || die "Can not open chr Order file $chrOrder_file $!\n";
-	my $fh = IO::File->new($genome) || die "Can not open genome file $genome $!\n";
-	while(<$fh>)
-	{
-		chomp;
-		if ($_ =~ m/^>/) 
-		{
-			my $chr = $_;
-			$chr =~ s/^>//;
-			$chr =~ s/ .*//ig;
-			print $out $chr."\n";
-		}
-		else
-		{
-			next;
-		}
-	}
-	$fh->close;
-	$out->close;
-}
-
 =head1 generate_pileup
  generate pileup command
 =cut
-sub generate_pileup
+sub generate_bam
 {
 	my ($list_file, $genome, $cpu, $debug) = @_;
 
@@ -323,12 +313,13 @@ sub generate_pileup
 		for(my $i=1; $i<@a; $i++)
 		{
 			@reads = split(/,/, $a[$i]);
-			remove_dup($a[$i]);	# remove read duplication
+			my (@uniq_reads) = reads::remove_Dup(@reads);	# remove read duplication
+			die "[ERR]removeDup\n" unless scalar(@uniq_reads) == scalar(@reads);
 
-			if ( scalar(@reads) == 2 )
+			if ( scalar(@uniq_reads) == 2 )
 			{
 
-				my ($read1, $read2) = ($reads[0], $reads[1]);
+				my ($read1, $read2) = ($uniq_reads[0], $uniq_reads[1]);
 
 				my $file_prefix1 = remove_file_suffix($read1);
 				my $file_prefix2 = remove_file_suffix($read2);
@@ -347,7 +338,7 @@ sub generate_pileup
 			
 				push(@sort_bam, $sort_bam);
 			}
-			elsif ( scalar(@reads) == 1 )
+			elsif ( scalar(@uniq_reads) == 1 )
 			{
 				my $read = $a[$i];
 				my $file_prefix = remove_file_suffix($read);
@@ -543,16 +534,6 @@ USAGE: $0 -t filter2 input_file output_file
 }
 
 =head2
- remove duplication for read
-=cut
-sub remove_dup
-{
-	my $seq_files = shift;  # format, sample.fastq (single-end); sample_R1.fastq,sample_R2.fastq (paired-end)
-	my $script = ${FindBin::RealBin}."/bin/SNPmao/removeRedundancy.pl";
-	print "perl $script $seq_files\n";	
-}
-
-=head2
  usage: show to to use this pipeline
 =cut
 sub usage
@@ -564,6 +545,7 @@ USAGE: $0 -t [tool] [options] input file
         identify  identify SNP from RNASeq
        	filter1   filter RNASeq SNP result
         filter2   filter RNASeq SNP indel
+	filterX	  filter SNP table
 
 ';
 	print $usage;
