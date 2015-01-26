@@ -334,7 +334,7 @@ sub generate_bam
 				$pileup_cmds.=$bwa_align_cmd1."\n";
 				$pileup_cmds.=$bwa_align_cmd2."\n";
 
-				my $bwa_sam_cmd = "bwa sampe $genome $sai1 $sai2 $read1 $read2 | $0 -t sepFilter | samtools view -bS -o $bam -";
+				my $bwa_sam_cmd = "bwa sampe $genome $sai1 $sai2 $read1 $read2 | $0 -t speFilter | samtools view -bS -o $bam -";
 				$pileup_cmds.=$bwa_sam_cmd."\n";
 
 				my $sort_cmd = "samtools sort $bam $sort";
@@ -351,7 +351,7 @@ sub generate_bam
 				my $bwa_align_cmd = "bwa aln -t $cpu -n 0.02 -o 1 -e 2 -f $sai $genome $read";
 				$pileup_cmds.=$bwa_align_cmd."\n";
 			
-				my $bwa_sam_cmd = "bwa samse $genome $sai $read | $0 -t sepFilter | samtools view -bS -o $bam -";
+				my $bwa_sam_cmd = "bwa samse $genome $sai $read | $0 -t speFilter | samtools view -bS -o $bam -";
 				$pileup_cmds.=$bwa_sam_cmd."\n";
 			
 				my $sort_cmd = "samtools sort $bam $sort";
@@ -633,11 +633,39 @@ sub pipeline
 =cut 
 sub spe_filter
 {
+	my $editDistanceCutoff = 4;
+
 	while(<STDIN>)
 	{
 		chomp;
-		print $_."\n" and next if ($_ =~ m/^@/);
+		print STDOUT $_."\n" if $_ =~ m/^@/;
 		my @a = split(/\t/, $_);
-		print "$_\n" unless ($a[1] & 0x4);
+		next if (scalar @a < 10);
+		unless ($a[1] & 0x4) {
+			#print STDOUT $_."\n";
+
+			# get edit distance;
+			my $ed = 'NA';
+			for (my $col = 11; $col<scalar(@a); $col++)  {
+				$ed = $1 if $a[$col] =~ m/NM:i:(\d+)$/;
+			}
+			warn "[WARN]no edit distance: $_\n" if $ed eq 'NA';
+
+			# trim soft/hard clip
+			my ($left_clip, $right_clip) = (0,0);
+			$left_clip = $1 if (($a[5] =~ m/^(\d)S/) || ($a[5] =~ m/^(\d)H/));
+			$right_clip = $1 if (($a[5] =~ m/(\d)S$/) || ($a[5] =~ m/(\d)H$/));
+			my $length = length($a[9]) - $left_clip - $right_clip;
+
+			# output reads
+			if ( $editDistanceCutoff > 0 && $editDistanceCutoff < 1 ) {
+				print STDOUT $_."\n" if ($ed / $length) <= $editDistanceCutoff;
+			}
+			elsif ( $editDistanceCutoff >= 1 || $editDistanceCutoff == 0 ) {
+				print STDOUT $_."\n" if $ed <= $editDistanceCutoff;
+			} else {
+				die "[ERR]bad edit distance cutoff $editDistanceCutoff\n";
+			}
+		}
 	}
 }
