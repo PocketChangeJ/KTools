@@ -370,31 +370,33 @@ sub filter_UnAlignedRead
         	}else{
                 	chomp;
                 	my @ta = split(/\t/, $_);
-                	$#ta > 10 or next;
-                	$$outflag{$ta[1]} and next;
+                	#$#ta > 10 or next;
+                	#$$outflag{$ta[1]} and next;
 			# my $is_u = 0;
 			# for my $tb (@ta[11..$#ta]) {
 			#   $tb eq 'XT:A:U' and do { $is_u = 1; last; }; # Other alternative values are ":M", ":R", ":N". And I am not sure about ":M".
 			# }
 			# $is_u == 1 and print STDOUT "$_\n";
-                	print $out "$_\n";
-                	last;
+
+			# $mapped_read{$a[0]} = 1 unless ($a[1] & 0x4);
+                	print $out "$_\n" unless ($ta[1] & 0x4);
+                	# last;
         	}
 	}
 
-	while (<$in>) 
-	{
-        	chomp;
-        	my @ta = split(/\t/, $_);
-        	$#ta > 10 or next;
-        	$$outflag{$ta[1]} and next;
+	#while (<$in>) 
+	#{
+        #	chomp;
+        #	my @ta = split(/\t/, $_);
+        #	$#ta > 10 or next;
+        #	$$outflag{$ta[1]} and next;
 		# my $is_u = 0;
 		# for my $tb (@ta[11..$#ta]) {
 		#	$tb eq 'XT:A:U' and do { $is_u = 1; last; };
 		# }
 		# $is_u == 1 and print STDOUT "$_\n";
-        	print $out "$_\n";
-	}
+        #	print $out "$_\n";
+	#}
 
 	$in->close;
 	$out->close;
