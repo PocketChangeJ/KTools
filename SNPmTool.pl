@@ -39,7 +39,7 @@ elsif   ($options{'t'} eq 'filter1')	{ filter_RNASeq(@ARGV); }    		#
 elsif   ($options{'t'} eq 'filter2')	{ filter_indel(@ARGV); }    		#
 elsif	($options{'t'} eq 'filterX')	{ snp_filter_table(\%options, \@ARGV); }	# filter SNP combined table
 elsif	($options{'t'} eq 'pipeline')	{ pipeline(); }
-elsif	($options{'t'} eq 'speFilter')	{ spe_filter(); }
+elsif	($options{'t'} eq 'speFilter')	{ spe_filter(\%options); }
 else	{ usage($version); }
 
 #################################################################
@@ -123,6 +123,9 @@ sampleNameA [tab] sampleNameB
 	my $cpu = 24;
         $cpu = $$options{'p'} if (defined $$options{'p'} && $$options{'p'} > 0);
 
+	my $ed_cutoff = 0.04;
+	$ed_cutoff = $$options{'n'} if defined $$options{'n'};
+
 	die "[ERR]undef reference\n" unless defined $$options{'r'};
 	my $genome = $$options{'r'};
 	die "[ERR]reference not exist\n" unless -s $genome;
@@ -183,7 +186,7 @@ sampleNameA [tab] sampleNameB
 	# mode 1: generate bam file
 	my %cmd_pileup;
 	if (defined $mode{'1'} && $mode{'1'} == 1) {
-		%cmd_pileup = generate_bam($input_list, $genome, $cpu, $debug);
+		%cmd_pileup = generate_bam($input_list, $genome, $cpu, $ed_cutoff, $debug);
 		foreach my $cul (sort keys %cmd_pileup) { run_cmd($cmd_pileup{$cul}); }
 	}
 
@@ -298,7 +301,7 @@ sub check_comparison
 =cut
 sub generate_bam
 {
-	my ($list_file, $genome, $cpu, $debug) = @_;
+	my ($list_file, $genome, $cpu, $ed_cutoff, $debug) = @_;
 	my %cmd_pileup;
 	my $fh = IO::File->new($list_file) || die "Can not open input file: $list_file $!\n";
 	while(<$fh>)
@@ -329,12 +332,12 @@ sub generate_bam
 				my $file_prefix2 = remove_file_suffix($read2);
 				($sai1, $sai2, $bam, $sort, $sort_bam) = ($file_prefix1.".sai", $file_prefix2.".sai", $file_prefix1.".bam", $file_prefix1."_sort", $file_prefix1."_sort.bam");
 
-				my $bwa_align_cmd1 = "bwa aln -t $cpu -n 0.02 -o 1 -e 2 -f $sai1 $genome $read1";
-				my $bwa_align_cmd2 = "bwa aln -t $cpu -n 0.02 -o 1 -e 2 -f $sai2 $genome $read2";
+				my $bwa_align_cmd1 = "bwa aln -t $cpu -n $ed_cutoff -o 1 -e 2 -f $sai1 $genome $read1";
+				my $bwa_align_cmd2 = "bwa aln -t $cpu -n $ed_cutoff -o 1 -e 2 -f $sai2 $genome $read2";
 				$pileup_cmds.=$bwa_align_cmd1."\n";
 				$pileup_cmds.=$bwa_align_cmd2."\n";
 
-				my $bwa_sam_cmd = "bwa sampe $genome $sai1 $sai2 $read1 $read2 | $0 -t speFilter | samtools view -bS -o $bam -";
+				my $bwa_sam_cmd = "bwa sampe $genome $sai1 $sai2 $read1 $read2 | $0 -t speFilter -n $ed_cutoff | samtools view -bS -o $bam -";
 				$pileup_cmds.=$bwa_sam_cmd."\n";
 
 				my $sort_cmd = "samtools sort $bam $sort";
@@ -351,7 +354,7 @@ sub generate_bam
 				my $bwa_align_cmd = "bwa aln -t $cpu -n 0.02 -o 1 -e 2 -f $sai $genome $read";
 				$pileup_cmds.=$bwa_align_cmd."\n";
 			
-				my $bwa_sam_cmd = "bwa samse $genome $sai $read | $0 -t speFilter | samtools view -bS -o $bam -";
+				my $bwa_sam_cmd = "bwa samse $genome $sai $read | $0 -t speFilter -n $ed_cutoff | samtools view -bS -o $bam -";
 				$pileup_cmds.=$bwa_sam_cmd."\n";
 			
 				my $sort_cmd = "samtools sort $bam $sort";
@@ -633,7 +636,10 @@ sub pipeline
 =cut 
 sub spe_filter
 {
+	my $options = shift;
+
 	my $editDistanceCutoff = 4;
+	$editDistanceCutoff = $$options{'n'} if defined $$options{'n'};
 
 	while(<STDIN>)
 	{
