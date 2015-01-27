@@ -347,7 +347,7 @@ sub generate_bam
 			}
 			elsif ( scalar(@uniq_reads) == 1 )
 			{
-				my $read = $a[$i];
+				my $read = $uniq_reads[0];
 				my $file_prefix = remove_file_suffix($read);
 				($sai, $bam, $sort, $sort_bam) = ($file_prefix.".sai", $file_prefix.".bam", $file_prefix."_sort", $file_prefix."_sort.bam");				
 
