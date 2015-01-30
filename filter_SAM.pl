@@ -82,12 +82,11 @@ if (defined $filter_multihits && $filter_multihits < 1)  { die $usage; }
 #################################################################
 # main								#
 #################################################################
-my %outflag = make_flag_list(); 
 
 if (defined $add_byexp) 		{ add_ByExp($sam_file_in, $sam_file_out); }
 if (defined $filter_byreadlength)	{ filter_ByReadLength($sam_file_in, $sam_file_out, $filter_byreadlength); }
 if (defined $filter_multihits)		{ filter_MultiHits($sam_file_in, $sam_file_out, $filter_multihits); }
-if (defined $filter_unalignedread)	{ filter_UnAlignedRead($sam_file_in, $sam_file_out, \%outflag); }
+if (defined $filter_unalignedread)	{ filter_UnAlignedRead($sam_file_in, $sam_file_out); }
 if (defined $filter_editDistanceCutoff)	{ filter_EditDistanceCutoff($sam_file_in, $sam_file_out, $filter_editDistanceCutoff); }
 if (defined $filter_uniq)		{ filter_uniq($sam_file_in, $sam_file_out); }
 if (defined $count_read)		{ count_read($sam_file_in); }
@@ -359,7 +358,7 @@ sub filter_EditDistanceCutoff
 =cut
 sub filter_UnAlignedRead
 {
-	my ($sam_file_in, $sam_file_out, $outflag) = @_;
+	my ($sam_file_in, $sam_file_out) = @_;
 
 	my $out = IO::File->new(">".$sam_file_out) || die "Can not open output sam file $!\n";
 	my $in = IO::File->new($sam_file_in) || die "Can not open input sam file $!\n";
