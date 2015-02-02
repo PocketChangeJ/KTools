@@ -1412,6 +1412,8 @@ USAGE: $0 -t [tool] [options] input file
 	annotate	function annotation by AHRD (blast is not inlude)	
 	fixanno		fix ahrd annotation or report blast hits
 	novoclean	remove contamination after denovo assembly
+	translate	translate EST to protein
+	
 
 '; 
 

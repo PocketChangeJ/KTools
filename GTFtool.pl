@@ -16,13 +16,59 @@ my %options;
 getopts('i:f:h', \%options);
 
 if      ($tool eq 'stats')	{ stats(\%options); }
-elsif   ($tool eq 'convert') { convert(\%options); }
+elsif   ($tool eq 'convert')	{ convert(\%options); }
+elsif	($tool eq 'addexon')	{ gtf_addexon(\%options); }
 else    { usage($version); }
 
 
 #################################################################
 # kentnf: subroutine						#
 #################################################################
+
+=head2
+ gtf_addexon -- add exon lable to transcript
+=cut
+sub gtf_addexon
+{
+	my $options = shift;
+	my $subUsage = qq'
+USAGE: $0 addexon -i input_GTF > output_GTF
+
+';
+	print $subUsage and exit unless $$options{'i'};
+	my $inFile = $$options{'i'};
+	die "[ERR]file not exist $inFile\n" unless -s $inFile;
+
+	# get exon number
+	my %trans_info = parse_gtf($inFile);
+	foreach my $tid (sort keys %trans_info) {
+		my @exon = split(/\t/, $trans_info{$tid}{'exon'});
+		die "[ERR]exon num $tid\n" unless (scalar(@exon) % 2 == 0);
+		my $exon_num = scalar(@exon) / 2;
+		$trans_info{$tid}{'exonNum'}  = $exon_num;
+	}
+
+	# add exon number to gtf
+	my $fh = IO::File->new($inFile) || die $!;
+	while(<$fh>) {
+		chomp;
+		if ($_ =~ m/^#/) { print $_."\n"; next; }
+		my @a = split(/\t/, $_);
+		if ($a[2] eq 'transcript') {
+			my $tid = '';
+			if ($a[8] =~ m/transcript_id "(\S+)"; /) { $tid = $1; }
+			die "[ERR]extract tid: $_\n" unless $tid;
+			die "[ERR]no exon num: $tid\n" unless defined $trans_info{$tid}{'exonNum'};
+			my $exon_num = "exon_number \"$trans_info{$tid}{'exonNum'}\";";
+			print $_." ".$exon_num."\n";
+				
+		} else {
+			print $_."\n";
+		}
+	}
+	$fh->close;
+}
+
 =head2
  stat -- generate statistics information
 =cut
@@ -273,10 +319,6 @@ foreach $key (sort hashValueDescendingNum (keys(%grades))) {
  usage -- print usage information
 =cut
 
-
-
-
-
 sub usage
 {
         print qq'
@@ -290,6 +332,7 @@ Command:
         convert		convert GTF to BED/GFF/TAB format
 	import		import GFF to GTF (gffread)
 	extractList	extract GTF by list
+	addexon		add exon num to transcript feature
 
 * the gtf file must have exon feature, transcript_id, and gene_id attributes
 
