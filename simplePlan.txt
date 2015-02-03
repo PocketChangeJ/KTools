@@ -1,0 +1,32 @@
+
+[better to finish them after thanks giving]
+
+1. GO tools for GO analysis, 
+	1.1 structure [finished] 
+	1.2 debug and run  GO analysis 
+
+2. SNP tools for RNASeq SNP analysis. 
+	2.1 finish basic function (finished)
+	2.2 add debug paramter to run script directly
+	2.3 add remove duplication code 
+
+3. pathwayTools (can not finished, should be done in xmas)
+	add script to parse pathway tools files. 
+	add steps 
+
+4. sRNA analysis
+	remove barcode (3' and 5') (Finished)
+	remove short (Finished)
+
+5. mRNATools
+	test AHRD functions (Finished)
+
+============================================
+   plan -- add Q20 Function, range function
+   clip from 5' and 3' function by the end of this Sept 2014
+   insert miRNA identification pipeline, debug, 
+   insert sPARTA to it, debug
+   insert ta-si analysis to it debug
+   by the end of 2014, check if there is any pipeline could be used for improve 24nt sRNA analysis
+===========================================
+
