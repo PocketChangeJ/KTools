@@ -10,8 +10,10 @@
 
  C script: Linyong Mao
  Filter SAM file: Honghe Sun
+ SNP effect code: Honghe Sun 
  perl script: Yi Zheng
 
+ 02/04/2015 add honghe's SNP effect_code
  01/17/2014 filter SNP table 
  02/01/2014 parameter for remove multi-hit reads
  01/22/2014 fix bug for merge just one file, chrOrder 
