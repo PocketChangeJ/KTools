@@ -1,18 +1,24 @@
 #!/usr/bin/perl -w 
 # Written by: Honghe Sun ( biosunhh@gmail.com ) 
-# 方法一: 20120110 不考虑邻近SNP之间的互相影响，独立检查SNP所带来的变化;
-#         SNP影响分类: 
-#            1. 基因间区 : 1.1 基因上游500bp 1.2 基因下游500bp 1.3 其余基因间区; 
-#            2. 基因内含子区: 2.1 intron/exon边界(即exon边界碱基外延2bp) 2.2 其它内含子区域; 
-#            3. Coding区: 3.1 起始密码子变为非起始密码子  3.2 终止密码子变化为继续编码  
-#                         3.3 氨基酸编码变化-转义  3.4 氨基酸编码变化-终止   3.5 同义突变; 
-#                         3.6 终止密码子替换为其它终止密码子; 3.7 起始密码子变为其它起始密码(AA变化); 
-# edit20120118:           3.8 位于编码区, 但氨基酸编码中存在'N', 因而无法判断; 
+# Method1:20120110 - each SNP is indenpendently from others, so only think about
+#		     the effect by indenpendent SNP
+#	Category of SNP effect
+#	1. gene region : 1.1 up stream 500bp 1.2 down stream 500bp 1.3 gene region; 
+#	2. intron region : 2.1 intron/exon border (2bp of exon border) 2.2 intron region;
+#	3. coding region : 
+#		3.1 start codon -> non-start codon
+#		3.2 stop codon -> non-stop codon
+#		3.3 Nonsynonymous substitution
+#		3.4 non-stop codon -> stop codon
+#		3.5 synonymous substitution 
+#              	3.6 stop codon -> stop codon (synonymous substitution) 
+#              	3.7 start codon -> start codon (synonymous substitution) 
+#		3.8 undetermined with N in CDS
+# edit20120118:           3.8 undetermined with N in CDS 
 # edit20130712:           Edit to fit for the format of pileup2SNP format from linyong. 
+# edit20150204:		  Edit to fit other plant species by Yi
 # ClV6 genome intron length stat: SUM             MEAN                    MEDIAN  MIN     MAX     Count   NoNull
 #                                 38918967        464.338157392383        199     11      9976    83816   83816
-
-# rewrite some part for used in all other genome 
 
 use strict; 
 use warnings;
@@ -55,7 +61,6 @@ my %codon;
 	}
 }
 
-#先偷个懒, 直接读取CDS序列; 
 # load CDS sequence to hash
 my %cds_seq;
 my $in = Bio::SeqIO->new(-format=>'fasta', -file=>$cds_file);
@@ -92,13 +97,18 @@ foreach my $tname (sort keys %trans_info) {
 	my @cds_region = split(/\t/, $c);
 	@cds_region = sort {$a<=>$b} @cds_region;
 	my @se = ($cds_region[0], $cds_region[scalar(@cds_region)-1]);
-	@cds_region = sort {$b<=>$a} @cds_region if $str eq '-';
-
-	my @pack_region; # better to pack these region in sub parse_gtf 
-	for(my $i=0; $i<@cds_region; $i=$i+2) {
-		push(@pack_region, [$cds_region[$i], $cds_region[$i+1]]);
+	
+	my @pack_region; # better to pack these region in sub parse_gtf
+	if ($str eq '+') {
+		for(my $i=0; $i<@cds_region; $i=$i+2) {
+			push(@pack_region, [$cds_region[$i], $cds_region[$i+1]]);
+		}
+	} else {
+		@cds_region = sort {$b<=>$a} @cds_region;
+		for(my $i=0; $i<@cds_region; $i=$i+2) {
+                        push(@pack_region, [$cds_region[$i+1], $cds_region[$i]]);
+                }
 	}
-
 	push(@{$anno{$ref}}, [[@se], $str, [@pack_region], $tname, length($cds), $cds]);
 }
 
@@ -127,7 +137,8 @@ open(FH, $snp_file) || die $!;
 SNP_LINE:
 while (<FH>) {
 	chomp; s/\s+$//; 
-	/^\s*$/ and next; 
+	/^\s*$/ and next;
+	/^\s*#/ and next; 
 #	/^chr(?:omosome|om)?\t/i and next; 
 	my @ta = split(/\t/, $_); 
 	my ($chr_id, $chr_pos) = @ta[2,3]; 
@@ -217,11 +228,11 @@ sub parseSNP {
 						# 判断cds_pos的类型; 
 						my $tbase = $newbase; 
 						my $ref_tbase = $refbase; 
-						my @ttype = &chk_cds_pos($cds_pos, $tbase, \$r1->[5], $r1->[4], $ref_tbase); 
+						my @ttype = chk_cds_pos($cds_pos, $tbase, \$r1->[5], $r1->[4], $ref_tbase); 
 						push(@type, [$r1->[3], @ttype]); next GENE; 
 					}
 				}# end for 
-				scalar(@type) > 0 or die "Error here!\n@$r1\n"; 
+				scalar(@type) > 0 or die print_error($r1, $position, $newbase, $refbase); 
 			}
 		}elsif ($r1->[1] eq '-') {
 			$position < $r1->[0][0]-$down_len and next GENE; 
@@ -237,7 +248,7 @@ sub parseSNP {
 					if ($position < $r3->[0]) {
 						# intron2; 
 						if ($position >= $r3->[0]-$span) {
-							push(@type, [$r1->[3], '2.1']); next GENE; 
+							push(@type, [$r1->[3], '2.1']); next GENE;
 						}else{
 							$cds_pos += ($r3->[1]-$r3->[0]+1); 
 						}
@@ -255,13 +266,11 @@ sub parseSNP {
 						$tbase =~ tr/ATGC/TACG/; 
 						my $ref_tbase = $refbase; 
 						$ref_tbase =~ tr/ATGC/TACG/; 
-						my @ttype = &chk_cds_pos($cds_pos, $tbase, \$r1->[5], $r1->[4], $ref_tbase); 
+						my @ttype = chk_cds_pos($cds_pos, $tbase, \$r1->[5], $r1->[4], $ref_tbase);
 						push(@type, [$r1->[3], @ttype]); next GENE; 
 					}
 				}# end for 
-
-
-				scalar(@type) > 0 or die "Err here!\n"; 
+				scalar(@type) > 0 or die print_error($r1, $position, $newbase, $refbase); 
 			}
 		}else{ # Failed to know '+'/'-'
 			die "Failed to parse strand for $r1->[1]!\n"; 
@@ -273,19 +282,14 @@ sub parseSNP {
 
 # gffR : [mRNA_S_E, Strand, CDS_SEs, GenID, cds_len, cds_seq]
 # back : [effect_type1, effect_type2, ...]; 
-# 方法一: 20120110 不考虑邻近SNP之间的互相影响，独立检查SNP所带来的变化;
-#         SNP影响分类: 
-#            1. 基因间区 : 1.1 基因上游500bp 1.2 基因下游500bp 1.3 其余基因间区; 
-#            2. 基因内含子区: 2.1 intron/exon边界(即exon边界碱基外延2bp) 2.2 其它内含子区域; 
-#            3. Coding区: 3.1 起始密码子变为非起始密码子  3.2 终止密码子变化为继续编码  
-#                         3.3 氨基酸编码变化-转义  3.4 氨基酸编码变化-终止   3.5 同义突变; 
-#                         3.6 终止密码子替换为其它终止密码子; 3.7 起始密码子变为其它起始密码(AA变化); 
-# ClV6 genome intron length stat: SUM             MEAN                    MEDIAN  MIN     MAX     Count   NoNull
-#                                 38918967        464.338157392383        199     11      9976    83816   83816
-
 
 # mut应该是与seq同链的碱基类型; 
-sub chk_cds_pos{
+
+=head2
+ input: cds_pos, tbase, $cds_seq, $cds_len, $ref_tbase
+=cut
+sub chk_cds_pos
+{
 	my ($p, $mut, $seqR, $len, $ref) = @_; 
 	my ($newb3, $rawb3); 
 	if ($p <= 3) {
@@ -401,3 +405,22 @@ sub parse_gtf
         return %trans_info;
 }
 
+=head2
+ print_error -- print line of array for error tracking
+=cut
+sub print_error
+{
+	my ($array, $position, $new_base, $ref_base) = @_;
+
+	print "Err here\n";
+	print "Start: ",$array->[0][0],"\n",
+		"End: ", $array->[0][1],"\n",
+		"Strand: ", $array->[1],"\n",
+		"TransID: ", $array->[3],"\n";
+
+	foreach my $r (@{$array->[2]}) {
+		print $r->[0],"\t",$r->[1],"\n";
+	}
+
+	print "$position, $new_base, $ref_base\n";
+}
