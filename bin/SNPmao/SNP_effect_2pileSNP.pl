@@ -27,16 +27,21 @@ use Bio::SeqIO;
 use Getopt::Long;
 
 my $usage = qq'
-USAGE: $0 -cds input_CDS.fasta -gtf input.GTF -snp input_SNP_table.txt
+USAGE: $0 [options] -cds input_CDS.fasta -gtf input.GTF -snp input_SNP_table.txt
 
+	-flank		flanking length of gene (upstream and downstream) (default:500)
+	-border		length of exon border (default: 2bp)
+	-feature	feature used for annotation (exon/CDS, default:CDS)
 * only accept GTF files
 
 ';
 
--t and !@ARGV and die $usage;
-
-my ($cds_file, $gtf_file, $snp_file);
+my ($cds_file, $gtf_file, $snp_file, $flank, $border, $feature);
+($flank, $border, $feature) = (500, 2, "CDS");
 GetOptions (
+	"flank=i" => \$flank,
+	"border=i" => \$border,
+	"feature=s" => \$feature,
 	"cds=s" => \$cds_file,	# CDS sequence
 	"gtf=s" => \$gtf_file,	# GTF file
 	"snp=s" => \$snp_file	# SNP file
@@ -73,8 +78,6 @@ while(my $inseq = $in->next_seq) {
 # subkey: chr, value: chr
 # subkey: strand, value: +/-
 # subkey: CDS/exon, value: region of CDS/exon
-
-my $feature = 'CDS';
 my %trans_info = parse_gtf($gtf_file, $feature);
 
 # put trans info to hash
@@ -185,13 +188,13 @@ while (<FH>) {
 # 显然, newbase是'+'链上的; 
 sub parseSNP {
 	my ($cdsseqR, $gffR, $position, $newbase, $refbase) = @_; 
-	my $up_len = 500; 
-	$up_len = 2000; # for 10kb upstream of genes; 
-	my $down_len = 500; 
-	$down_len = 2000; # for 10kb downstream of genes; 
+	my $up_len = $flank; 
+	#$up_len = 2000; # for 10kb upstream of genes; 
+	my $down_len = $flank; 
+	#$down_len = 2000; # for 10kb downstream of genes; 
 #	defined $_[4] and $_[4]>=0 and $up_len = $_[4]; 
 #	defined $_[5] and $_[5]>=0 and $down_len = $_[5]; 
-	my $span = 2; 
+	my $span = $border; 
 	my @type; 
 	GENE: 
 	for my $r1 (@$gffR) {
