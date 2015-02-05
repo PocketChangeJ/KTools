@@ -42,11 +42,43 @@ elsif   ($options{'t'} eq 'filter2')	{ filter_indel(@ARGV); }    		#
 elsif	($options{'t'} eq 'filterX')	{ snp_filter_table(\%options, \@ARGV); }	# filter SNP combined table
 elsif	($options{'t'} eq 'pipeline')	{ pipeline(); }
 elsif	($options{'t'} eq 'speFilter')	{ spe_filter(\%options); }
+elsif	($options{'t'} eq 'effect')	{ snp_effect(\%options, \@ARGV); }	# SNP effect analysis
 else	{ usage($version); }
 
 #################################################################
 # kentnf: subroutine						#
 #################################################################
+
+=head2
+ snp_effect -- check the SNP effect
+=cut
+sub snp_effect
+{
+	my ($options, $files) = @_;
+
+	my $usage = qq'
+USAGE: $0 -t effect [options] -c cds.fa -g gtf_file -i snp_file 
+
+	-f 	feature type (CDS/exon)
+	-b	border length of exon
+	-r	flank length of gene
+
+';
+	print $usage and exit unless (defined $$options{'c'} && defined $$options{'g'} && defined $$options{'i'});
+
+	foreach my $f ( ($$options{'c'}, $$options{'g'}, $$options{'i'}) ) {
+		die "[ERR]file not exist $f\n" unless -s $f;
+	}
+
+	my ($feature, $border, $flank) = ('CDS', 2, 500);
+	$feature = $$options{'f'} if (defined $$options{'f'} && $$options{'f'} eq 'exon');
+	$border = $$options{'b'} if (defined $$options{'b'} && $$options{'b'} > 0);
+	$flank = $$options{'r'} if (defined $$options{'r'} && $$options{'r'} > 0);
+
+	my $effect_bin = "$FindBin::RealBin/bin/SNPmao/SNP_effect_2pileSNP.pl";
+	die "[ERR]script not exist $effect_bin\n" unless -s $effect_bin;
+	run_cmd("perl $effect_bin -flank $flank -border $border -feature $feature -cds $$options{'c'} -gtf $$options{'g'} -snp $$options{'i'} ");
+}
 
 =head2
  snp_filter_table -- filter raw snp table
@@ -564,6 +596,7 @@ USAGE: $0 -t [tool] [options] input file
        	filter1   filter RNASeq SNP result
         filter2   filter RNASeq SNP indel
 	filterX	  filter SNP table
+	effect	  SNP effect analysis
 
 ';
 	print $usage;
