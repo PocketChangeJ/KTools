@@ -47,8 +47,9 @@ sub sRNA_composition
 	my ($options, $files) = @_;
 
 	my $subUsage = qq'
-USAGE: $0 -t composition input_sRNA_clean1 input_sRNA_clean2 ... input_sRNA_clean3 
+USAGE: $0 -t composition [options] input_sRNA_clean1 input_sRNA_clean2 ... input_sRNA_clean3 
 
+	-q	format of input reads, fastq/fasta (default: fastq)
 * the script will align cleaned sRNA to rRNA, tRNA, snRNA, and snoRNA, then count 
   the length distribution of aligned reads
 
@@ -62,6 +63,12 @@ USAGE: $0 -t composition input_sRNA_clean1 input_sRNA_clean2 ... input_sRNA_clea
 	$dbs{'snRNA'}	= $FindBin::RealBin."/database/plant_snRNA";
 	$dbs{'snoRNA'}	= $FindBin::RealBin."/database/plant_snoRNA";
 
+	my $format = 'fastq';
+	$format = 'fasta' if (defined $$options{'q'} && $$options{'q'} eq 'fasta');
+
+	my $bowtie_format = '-q';
+	$bowtie_format = '-f' if $format eq 'fasta';
+
 	foreach my $f ( @$files )
 	{
 		# map reads to ref db, then store length dist of aligned reads to hash
@@ -72,7 +79,7 @@ USAGE: $0 -t composition input_sRNA_clean1 input_sRNA_clean2 ... input_sRNA_clea
 		# align reads to reference
 		foreach my $db_name (sort keys %dbs ) {
 			my $db_file = $dbs{$db_name};
-			my $cmd = "bowtie -v 1 -k 1 -p 24 -S $db_file $f MMM";
+			my $cmd = "bowtie -v 1 -k 1 -p 24 $bowtie_format -S $db_file $f MMM";
 			system($cmd) && die "[ERR]CMD $cmd\n";
 			my %length_dist = get_sam_length_dist('MMM');
 			foreach my $len (sort {$a<=>$b} keys %length_dist) {
@@ -198,6 +205,7 @@ USAGE: $0 -t rmadp [options] -s adapter_sequence  input_file1 ... input_fileN
 		$adp_5p_sub = substr($adp_5p, -$adp_5p_len);
 		$adp_5p_sub_long = substr($adp_5p, -$adp_5p_len_long);
 	} 
+	my $long_match_end_enable = 1;
 	
 	my $distance = 1;
 	$distance = int($$options{'d'}) if defined $$options{'d'} && $$options{'d'} >= 0;
@@ -277,26 +285,33 @@ USAGE: $0 -t rmadp [options] -s adapter_sequence  input_file1 ... input_fileN
 				my $long_pre_match_end = 0;
 				my $long_match_end = 0;
 
-				if ($long_match_end == 1) {
+				if ($long_match_end_enable == 1) {
 					while($seq =~ /\Q$adp_5p_sub_long\E/g) {
 						$long_match_end = pos($seq) - 1;
 						$long_pre_match_end = $long_match_end + 1;
 					}
-					
+			
+					# report the pattern of matched reads		
 					if ($long_pre_match_end > 0) {
                                         	my $sub1 = substr($seq, 0, $long_pre_match_end);
 						my $sub2 = substr($adp_5p, -$long_pre_match_end);
                                         	my $mm = 'unmatch';
+						my $ed = 0;
                                         	if ($sub1 eq $sub2) { 
 							$mode_5p_a_match++; 
 							$mm = "match"; 
+						} else {
+							$ed = hamming($sub1, $sub2);
 						}
-
-						# decide how to trim 5p adp ???
-						# option 1 ; trime
-						# option 2 : keep
-						# code 
-                                        	print "$seq, $long_pre_match_end, $sub1, $sub2, $mm\n";
+						# my $perc = sprintf("%.2f", ($ed/length($sub1)) );					
+	
+						# rules to perform trim
+						# 1 trim match and unmatch if length <=20 or >=25 
+						# 2 trim if edit distance <= 3 (21-24nt)
+						if (length($seq)>=21 && length($seq)<=24 && $ed > 3) {
+							$long_pre_match_end = 0;
+						}
+                                        	# print "$seq, $long_pre_match_end, $sub1, $sub2, $mm, $ed, $perc\n";
 					}
 				}
 
