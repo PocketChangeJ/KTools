@@ -21,6 +21,7 @@ getopts('a:b:c:d:e:g:i:j:k:l:m:n:o:p:q:r:s:t:v:w:x:y:z:fuh', \%options);
 #getopts('t:i:o:p:s:c:fuh', \%options);
 unless (defined $options{'t'}) { usage($version); }
 
+# data clean and file preparison
 if	($options{'t'} eq 'chkadp')	{ chkadp(\%options, \@ARGV);  }
 elsif	($options{'t'} eq 'chkadp2')    { chkadp2(\%options, \@ARGV); }
 elsif	($options{'t'} eq 'rmadp')	{ rmadp(\%options, \@ARGV); }
@@ -31,13 +32,44 @@ elsif	($options{'t'} eq 'unique' )	{ unique(\%options);  }
 elsif   ($options{'t'} eq 'norm' )	{ norm(\%options);    }
 elsif   ($options{'t'} eq 'normcut')	{ normcut(\%options); }
 elsif   ($options{'t'} eq 'combine')	{ combine(\%options); }
-elsif	($options{'t'} eq 'range')	{ range(\%options);   }
+elsif	($options{'t'} eq 'range')	{ srna_range(\%options); }
+
+# downstream analysis
+elsif   ($options{'t'} eq 'sparta')	{ srna_sparta(\%options, @ARGV); }	# sRNA target analysis using degradome dataset
+elsif   ($options{'t'} eq 'diffexp')	{ srna_diff_exp(); }			# differential expression analysis of sRNA
+
+# tell user how to use pipeline
 elsif	($options{'t'} eq 'pipeline')   { pipeline(\%options); }
 else	{ usage($version); } 
 
 #################################################################
 # kentnf: subroutine						#
 #################################################################
+
+=head2
+ sRNA_sparta 
+=cut
+sub srna_sparta
+{
+
+	# sPARTA.py -featureFile $transcriptome_fa -genomeFeature 0 -miRNAFile $sRNA_phased -libs $degradome_sequence -tarPred -tarScore --tag2FASTA --map2DD --validate
+}
+
+=head2
+ sRNA_diff_exp
+=cut
+sub srna_diff_exp
+{	
+	my $usage = qq'
+Guide: 
+1 . remove column 1 from input_10TPM_sRNA_expr input_10TPM_sRNA_expTPM 
+2 . perform differential express analysis using DEG tools
+
+Notice: do not use sRNA ID, just use sRNA sequence as their ID
+
+';
+	print $usage and exit;
+}
 
 =head2
  sRNA_composition
@@ -1290,6 +1322,61 @@ USAGE $0 combine [options]
 }
 
 =head2
+ srna_range -- only get selected size of sRNA reads for next analysis
+=cut
+sub srna_range
+{
+	my ($options, $files) = @_;
+	my $usage = qq'
+USAGE: $0 -t range [options] input_files
+
+	-l	length array for select [required]
+
+* example of set -l parameters:
+  21-23:25:27:32-34
+  reads with length 21,22,23,25,27,32,33,34 were selected
+
+';
+	print $usage and exit unless defined $$files[0];
+	foreach my $f (@$files) {
+		die "[ERR]file not exist $f\n" unless -s $f;
+	}
+
+	print $usage and exit unless defined $$options{'l'};
+	my @m = split(/:/, $$options{'l'});
+
+	my @length;
+	foreach my $m (@m) {
+		if ($m =~ m/-/)	{
+			my @a = split(/-/, $m, 2);
+			for($a[0] .. $a[1]) { push(@length, $_); }
+		} else {
+			push(@length, $m);
+		}
+	}
+
+	my %length;
+	foreach my $len (@length) {
+		die "[ERR]select length $len\n" unless $len > 0;
+		$length{$len} = 1;
+	}
+
+	foreach my $f (@$files)
+	{
+		my $output_file = $f.".range";
+	
+		my $out = IO::File->new(">".$output_file) || die $!;
+		my $in = Bio::SeqIO->new(-format=>'fasta', -file=>$f);
+		while(my $inseq = $in->next_seq) {
+			if (defined $length{$inseq->length}) {
+				print $out ">",$inseq->id,"\n",$inseq->seq,"\n";
+			}
+		}
+		$out->close;
+	}
+}
+
+=head2
  usage -- print usage information
 =cut
 sub usage
@@ -1310,7 +1397,11 @@ Command:
 	normcut		normalization cutoff	
 	lengthd		length distribution of sRNA	
 	combine		combine sRNA replicates
+	range		select sRNA by length for next analysis
 	
+	diffexp		perform differential express analysis
+	sparta		sRNA target identification using PARE data
+
 ';
 	exit;
 }
