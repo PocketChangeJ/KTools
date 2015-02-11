@@ -26,16 +26,16 @@ if	($options{'t'} eq 'chkadp')	{ chkadp(\%options, \@ARGV);  }
 elsif	($options{'t'} eq 'chkadp2')    { chkadp2(\%options, \@ARGV); }
 elsif	($options{'t'} eq 'rmadp')	{ rmadp(\%options, \@ARGV); }
 elsif	($options{'t'} eq 'composition'){ sRNA_composition(\%options, \@ARGV); }
-elsif	($options{'t'} eq 'convert')	{ convert(\%options); }
+elsif	($options{'t'} eq 'convert')	{ srna_convert(\%options); }
 elsif	($options{'t'} eq 'lengthd')	{ lengthd(\%options, \@ARGV); }
-elsif	($options{'t'} eq 'unique' )	{ unique(\%options);  }
+elsif	($options{'t'} eq 'unique' )	{ srna_unique(\%options, \@ARGV);  }
 elsif   ($options{'t'} eq 'norm' )	{ norm(\%options);    }
 elsif   ($options{'t'} eq 'normcut')	{ normcut(\%options); }
 elsif   ($options{'t'} eq 'combine')	{ combine(\%options); }
-elsif	($options{'t'} eq 'range')	{ srna_range(\%options); }
+elsif	($options{'t'} eq 'range')	{ srna_range(\%options, \@ARGV); }
 
 # downstream analysis
-elsif   ($options{'t'} eq 'sparta')	{ srna_sparta(\%options, @ARGV); }	# sRNA target analysis using degradome dataset
+elsif   ($options{'t'} eq 'sparta')	{ srna_sparta(\%options, \@ARGV); }	# sRNA target analysis using degradome dataset
 elsif   ($options{'t'} eq 'diffexp')	{ srna_diff_exp(); }			# differential expression analysis of sRNA
 
 # tell user how to use pipeline
@@ -51,8 +51,76 @@ else	{ usage($version); }
 =cut
 sub srna_sparta
 {
+	my ($options, $files) = @_;
+	my $usage = qq'
+USAGE: $0 -t sparta -o output_prefix reference sRNA_seq PARE_tab.txt
 
-	# sPARTA.py -featureFile $transcriptome_fa -genomeFeature 0 -miRNAFile $sRNA_phased -libs $degradome_sequence -tarPred -tarScore --tag2FASTA --map2DD --validate
+* please notice, if want to change tagLen of sPARTA.py, do not use 
+  parameter -tagLen, just change it default value in sPARTA.py. 
+
+* the input file
+1. the reference file must end with .fasta
+2. the sRNA_seq should be fasta format
+3. the PARE file should be tab format of unique reads
+
+* the output file will parsed to tab format for next analysis
+1. output_prefix_target.txt 
+2. output_prefix_target_validate.txt
+
+';
+	print $usage and exit unless scalar @$files == 3;
+
+	my ($ref_file, $sRNA_file, $pare_file) = @$files;
+	foreach my $f (@$files) {
+		die "[ERR]file not exist $f\n" unless -s $f;
+	}
+
+	print $usage and exit unless defined $$options{'o'};
+	my $output_target	= $$options{'o'}."_target.txt";
+	my $output_validate	= $$options{'o'}."_target_validate.txt";
+	foreach my $f (($output_target, $output_validate)) {
+		die "[ERR]file exist $f\n" if -s $f;
+	}
+
+	my $ref_files = `ls reference*`; chomp($ref_files);
+	my @r = split(/\n/, $ref_files);
+	die "[ERR]please remove reference files before analysis\n" unless @r == 0;
+
+	my @temp = qw/baseCounts.txt dd_map genome index miRinput_RevComp.fa output PAGe PARE predicted/;
+	my $new_head = $sRNA_file."_new_head.fa";
+	push(@temp, $new_head);
+	foreach my $f (@temp) {
+		die "[ERR]temp file/folder exist $f\n" if -e $f;
+	}
+
+	die "[ERR]ref file format $ref_file\n" unless $ref_file =~ m/\.fasta$/;
+	run_cmd("ln -s $ref_file  reference.fasta");
+	run_cmd("sPARTA.py -featureFile reference.fasta -genomeFeature 0 -miRNAFile $sRNA_file -libs $pare_file -tarPred -tarScore --tag2FASTA --map2DD --validate");
+
+	# check if output file exist
+	my $validate_file = `ls output/*_validated`; chomp($validate_file);
+
+	# pare output result
+	if (-s $validate_file) {
+		my $out1 = IO::File->new(">".$output_validate) || die $!;
+		my $fh1  = IO::File->new($validate_file) || die $!;
+		while(<$fh1>) {
+			chomp;
+			my @a = split(/,/, $_);
+			print $out1 join("\t", @a),"\n";
+                }
+		$fh1->close;
+		$out1->close;
+	} else {
+		warn "[WARN]no validate result: $validate_file\n";
+	}
+
+	# remove temp folder and files
+	foreach my $f (@temp) {
+		run_cmd("rm -rf $f") if -e $f;
+	}
+
+	run_cmd("rm -rf reference*");
 }
 
 =head2
@@ -727,14 +795,14 @@ USAGE: $0 chkadp [options] input_file
 }
 
 =head2
- convert -- convert table format (GEO database) to fasta format (default), or fasta format to table format
+ sran_convert -- convert table format (GEO database) to fasta format (default), or fasta format to table format
 =cut
-sub convert
+sub srna_convert
 {
 	my $options = shift;
 
-	my $subUsage = qq'
-USAGE: $0 convert [options]
+	my $usage = qq'
+USAGE: $0 -t convert [options]
 	-i	input file 
 	-o	output prefix (defaul:sRNAseq)
 	-p	prefix of out seqID (for table convert to fasta)
@@ -742,10 +810,9 @@ USAGE: $0 convert [options]
 
 ';
 
-	print $subUsage and exit unless $$options{'i'}; 
+	print $usage and exit unless $$options{'i'}; 
 	my $out_prefix = 'sRNAseq';
 	$out_prefix = $$options{'o'} if $$options{'o'};
-
 
 	my ($inFile, $outFile, $format, $prefix);
 	$inFile = $$options{'i'};
@@ -815,13 +882,12 @@ USAGE: $0 convert [options]
 =head2
  unique -- convert the clean sRNA to unique (remove duplication)
 =cut
-sub unique
+sub srna_unique
 {
-	my $options = shift;
+	my ($options, $files) = @_;
 
-	my $subUsage = qq'
+	my $usage = qq'
 USAGE: $0 unique [options]
-        -i      input file 
         -u      input reads file is sRNA clean (default:0) / uniq (1) format
 
 * convert the clean sRNA to unique
@@ -833,9 +899,13 @@ USAGE: $0 unique [options]
 
 ';
 
-	print $subUsage and exit unless $$options{'i'};
-	my $input_file = $$options{'i'};
-	die "[ERR]cat not find input file $$options{'i'}\n" unless -s $$options{'i'};
+	print $usage and exit unless defined $$files[0];
+	foreach my $f (@$files) {
+		die "[ERR]file not exist $f\n" unless -s $f;
+	}
+
+    foreach my $input_file (@$files)
+    {
 
 	if ($$options{'u'}) { # convert uniq to clean(norm) format
 		my $output_file = $input_file;
@@ -949,6 +1019,7 @@ USAGE: $0 unique [options]
 
 		$out->close;
 	}
+    }
 }
 
 =head2
@@ -1374,6 +1445,16 @@ USAGE: $0 -t range [options] input_files
 		}
 		$out->close;
 	}
+}
+
+=head2
+ run_cmd -- run command
+=cut 
+sub run_cmd
+{
+	my $cmd = shift;
+	print $cmd."\n";
+	system($cmd) && die "[ERR]cmd $cmd\n";
 }
 
 =head2
