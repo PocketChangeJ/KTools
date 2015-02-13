@@ -543,7 +543,7 @@ sub chkadp2
 {
 	my ($options, $files) = @_;
 
-my $subUsage = qq'
+	my $usage = qq'
 USAGE: $0 chkadp2 [options] input_file
         -p      check 3p/5p adapter using kmer method [default:3]
         -y      number of reads processed (default:1e+5, min)
@@ -554,9 +554,8 @@ USAGE: $0 chkadp2 [options] input_file
 
 ';
 
-	print $subUsage and exit unless $$files[0];
-	my $inFile = $$files[0];
-	die "[ERR]File not exist\n" unless -s $inFile;
+	print $usage and exit unless defined $$files[0];
+	foreach my $f (@$files) { die "[ERR]File not exist: $f\n" unless -s $f; }
 	
 	my $read_yeild = 1e+5;
 	$read_yeild = int($$options{'y'}) if (defined $$options{'y'} && $$options{'y'} > 1e-5);
@@ -586,56 +585,69 @@ USAGE: $0 chkadp2 [options] input_file
         }
 	
 	# compare UniVec with read;
-	my $seq_ct = 0; my $format; 
-	my $fh = IO::File->new($inFile) || die $!;
-        while(<$fh>)
-        {
-                chomp;
-                my $id = $_;
-                if      ($id =~ m/^>/) { $format = 'fasta'; }
-                elsif   ($id =~ m/^@/) { $format = 'fastq'; }
-                else    { die "[ERR]seq format $id\n"; }
-                my $seq = <$fh>; chomp($seq); $seq = uc($seq);
+	foreach my $inFile (@$files)
+	{
+		my $seq_ct = 0; my $format; 
 
-		# compare seq with univec, return location
-		for(my $i=$max_len; $i>=$min_len; $i=$i-1) 
-		{
-			my $sub = substr($seq, 0, $i);	
-			foreach my $uid (sort keys %uv_seq) 
+		my $fh;
+		if ($inFile =~ m/\.gz$/) {
+			open($fh, '-|', "gzip -cd $inFile") || die $!;
+		} else {
+			open($fh, $inFile) || die $!;
+		}
+
+        	while(<$fh>)
+        	{
+	                chomp;
+	                my $id = $_;
+	                if      ($id =~ m/^>/) { $format = 'fasta'; }
+	                elsif   ($id =~ m/^@/) { $format = 'fastq'; }
+	                else    { die "[ERR]seq format $id\n"; }
+	                my $seq = <$fh>; chomp($seq); $seq = uc($seq);
+
+			# compare seq with univec, return location
+			for(my $i=$max_len; $i>=$min_len; $i=$i-1) 
 			{
-				my $useq = $uv_seq{$uid};
-				while ($useq =~ m/\Q$sub\E/g) {
-					if (pos($useq) eq length($useq)) {
-						$uv_match{$uid}++;
-						if (defined $uv_match_stat{$uid}{$i}) {
-							$uv_match_stat{$uid}{$i}++;
-						} else {
-							$uv_match_stat{$uid}{$i} = 1;
+				my $sub = substr($seq, 0, $i);	
+				foreach my $uid (sort keys %uv_seq) 
+				{
+					my $useq = $uv_seq{$uid};
+					while ($useq =~ m/\Q$sub\E/g) {
+						if (pos($useq) eq length($useq)) {
+							$uv_match{$uid}++;
+							if (defined $uv_match_stat{$uid}{$i}) {
+								$uv_match_stat{$uid}{$i}++;
+							} else {
+								$uv_match_stat{$uid}{$i} = 1;
+							}
 						}
 					}
 				}
 			}
-		}
 
-                if ($format eq 'fastq') { <$fh>; <$fh>; }
-                $seq_ct++;
-                last if $seq_ct == $read_yeild;
-        }
-        $fh->close;
+	                if ($format eq 'fastq') { <$fh>; <$fh>; }
+	                $seq_ct++;
+	                last if $seq_ct == $read_yeild;
+	        }
+	        $fh->close;
 
-	#output result
-	print "=== adapter detection report for $inFile ===\n";
-	foreach my $uid (sort keys %uv_seq) {
-		if ($uv_match{$uid} > ($read_yeild/1000)) {
-			my $match_stat = "";;
-			for($min_len .. $max_len) {
-				if ( defined $uv_match_stat{$uid}{$_} ) {
-					$match_stat.=" $_:$uv_match_stat{$uid}{$_}";
+		#output result
+		print "=== adapter detection report for $inFile ===\n";
+		foreach my $uid (sort keys %uv_seq) {
+			if ($uv_match{$uid} > ($read_yeild/1000)) {
+				my $match_stat = "";;
+				for($min_len .. $max_len) {
+					if ( defined $uv_match_stat{$uid}{$_} ) {
+						$match_stat.=" $_:$uv_match_stat{$uid}{$_}";
+					}
 				}
+				print "$uid\t$uv_match{$uid}\t$match_stat\t$uv_desc{$uid}\n$uv_seq{$uid}\n";
 			}
-			print "$uid\t$uv_match{$uid}\t$match_stat\t$uv_desc{$uid}\n$uv_seq{$uid}\n";
+			$uv_match{$uid} = 0; # clean hash
 		}
-	} 
+
+		%uv_match_stat = (); # clean hash
+	}
 }
 
 =head2

@@ -41,8 +41,10 @@ USAGE: $0 -t sRNA-mRNA [options] sRNA_target_result sRNA_exp mRNA_exp
 	# different sRNA target format will use different key to connect dataset
 	my $format = 'fei'; my ($key_a, $key_b) = (7, 2);
 	$format = $$options{'f'} if defined $$options{'f'};
-	
-	if ($format eq 'sparta') {
+
+	if ($format eq 'fei') {
+
+	} elsif ($format eq 'sparta') {
 
 	} elsif ($format eq 'targetfinder') {
 
