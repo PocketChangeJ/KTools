@@ -17,7 +17,15 @@ getopts('a:b:c:d:e:f:g:i:j:k:l:m:n:o:p:q:r:s:t:u:v:w:x:y:z:h', \%options);
 unless ( defined $options{'t'} ) { usage(); }
 
 if	( $options{'t'} eq 'CollectInsertSizeMetrics')	{ picard_CollectInsertSizeMetrics(\@ARGV); }
+if	( $options{'t'} eq 'SamToFastq')		{  }
+if	( $options{'t'} eq 'help')			{ picard_help(); }
 else	{ usage(); }
+
+#################################################################
+# kentnf subroutine						#
+#################################################################
+
+
 
 =head2
  picard_CollectInsertSizeMetrics
@@ -37,6 +45,15 @@ perl $0 -t [picard tool name] input_file_list
 		print "java -jar $picard_path/picard.jar CollectInsertSizeMetrics I=$f O=$out H=$hist\n"; 
 	}
 }
+
+=head2
+ picard_help
+=cut
+sub picard_help {
+	system("java -jar $picard_path/picard.jar");
+	print "java -jar $picard_path/picard.jar\n";
+}
+
 
 =head2
  usage

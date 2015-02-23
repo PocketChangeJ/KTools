@@ -479,6 +479,10 @@ USAGE: $0 -t rmadp [options] -s adapter_sequence  input_file1 ... input_fileN
 				}
 			}
 
+			#if ($label =~ m/3p_unmatch/) {
+			#	print $out1 "@".$id1."\n".$seq."\n".$id2."\n".$qul."\n";
+			#}
+
 			if ( ($pos_3p > $pos_5p) && ($label !~ m/3p_null/) && ($label !~ m/3p_unmatch/) && ($label !~ m/5p_null/) )
 			{
 				my $trimmed_len = $pos_3p - $pos_5p;
@@ -525,7 +529,6 @@ USAGE: $0 -t rmadp [options] -s adapter_sequence  input_file1 ... input_fileN
 
 		# debug 5p info
 		print "$inFile\t$mode_5p_a\t$mode_5p_a_match\t$mode_5p_b\n";
-
 	}
 
 	# report sRNA trim information
@@ -899,7 +902,7 @@ sub srna_unique
 	my ($options, $files) = @_;
 
 	my $usage = qq'
-USAGE: $0 unique [options]
+USAGE: $0 unique [options] input_reads input_reads ... input_reads
         -u      input reads file is sRNA clean (default:0) / uniq (1) format
 
 * convert the clean sRNA to unique
@@ -1270,6 +1273,7 @@ sub normcut
 USAGE $0 normcut [options]
 	-i	input file prefix
 	-c	cutoff (default: 10 TPM)
+	-m	cutoff mode -- TPM or count (default: TPM)
 
 * the input file should be:
 [perfix]_sRNA_expr
@@ -1283,53 +1287,99 @@ USAGE $0 normcut [options]
 	my $cutoff = 10;
 	$cutoff = $$options{'c'} if (defined $$options{'c'} && $$options{'c'} > 0);
 
+	my $cutoff_m = 'TPM';
+	$cutoff_m = $$options{'m'} if (defined $$options{'m'} && $$options{'m'} eq 'count');	
+
 	my $expr = $file_prefix."_sRNA_expr";
 	my $norm = $file_prefix."_sRNA_expTPM";
 	my $srna = $file_prefix."_sRNA_seq";
 
-	my $out_expr = $file_prefix."_".$cutoff."TPM_sRNA_expr";
-	my $out_norm = $file_prefix."_".$cutoff."TPM_sRNA_expTPM";
-	my $out_sRNA = $file_prefix."_".$cutoff."TPM_sRNA_seq";
+	my $out_expr = $file_prefix."_".$cutoff.$cutoff_m."_sRNA_expr";
+	my $out_norm = $file_prefix."_".$cutoff.$cutoff_m."_sRNA_expTPM";
+	my $out_sRNA = $file_prefix."_".$cutoff.$cutoff_m."_sRNA_seq";
 
 	my $out1 = IO::File->new(">".$out_expr) || die $!;
 	my $out2 = IO::File->new(">".$out_norm) || die $!;
 	my $out3 = IO::File->new(">".$out_sRNA) || die $!;
 
-	my %id;
-	my $fh2 = IO::File->new($norm) || die $!;
-	my $title = <$fh2>; print $out2 $title;
-	while(<$fh2>)
-	{
-        	chomp;
- 		my @a = split(/\t/, $_);
+	if ($cutoff_m eq 'TPM') {
 
-		my $select = 0;
-		for(my $i=2; $i<@a; $i++) {
-               		if ( $a[$i] > $cutoff ) {
-                        	$select = 1;
-                	}
-        	}
+		my %id;
+		my $fh2 = IO::File->new($norm) || die $!;
+		my $title = <$fh2>; print $out2 $title;
+		while(<$fh2>)
+		{
+        		chomp;
+ 			my @a = split(/\t/, $_);
 
-        	if ($select == 1) {
-                	$id{$a[0]} = 1;
-                	print $out2 $_."\n";
-			print $out3 ">$a[0]\n$a[1]\n";
-        	}
+			my $select = 0;
+			for(my $i=2; $i<@a; $i++) {
+        	       		if ( $a[$i] > $cutoff ) {
+                	        	$select = 1;
+	                	}
+	        	}
+
+	        	if ($select == 1) {
+        	        	$id{$a[0]} = 1;
+                		print $out2 $_."\n";
+				print $out3 ">$a[0]\n$a[1]\n";
+	        	}
+		}
+		$fh2->close;
+
+		my $fh1 = IO::File->new($expr) || die $!;
+		my $t = <$fh1>; print $out1 $t;
+		while(<$fh1>)
+		{
+        		chomp;
+			my @a = split(/\t/, $_);
+			if ( defined $id{$a[0]} ) { print $out1 $_."\n"; }
+		}
+		$fh1->close;
+
+	} elsif ($cutoff_m eq 'count') {
+		my %id;
+		my $fh1 = IO::File->new($expr) || die $!;
+		my $title = <$fh1>; print $out1 $title;
+		while(<$fh1>)	
+		{
+			chomp;
+			my @a = split(/\t/, $_);
+
+			my $select = 0;
+			for(my $i=2; $i<@a; $i++) {
+				if ( $a[$i] >= $cutoff ) {
+					$select = 1;
+				}
+			}
+
+			if ($select == 1) {
+				$id{$a[0]} = 1;
+				print $out1 $_."\n";
+				print $out3 ">$a[0]\n$a[1]\n";
+			}
+		}
+		$fh1->close;
+
+		my $fh2 = IO::File->new($norm) || die $!;
+		my $t = <$fh2>; print $out2 $t;
+		while(<$fh2>)
+		{
+			chomp;
+			my @a = split(/\t/, $_);
+			if ( defined $id{$a[0]} ) { print $out2 $_."\n"; }
+		}
+		$fh2->close;
+
+	} else {
+		die "[ERR]cutoff mode: $cutoff_m\n";
 	}
-	$fh2->close;
+
+	$out1->close;
 	$out2->close;
 	$out3->close;
+	
 
-	my $fh1 = IO::File->new($expr) || die $!;
-	my $t = <$fh1>; print $out1 $t;
-	while(<$fh1>)
-	{
-        	chomp;
-		my @a = split(/\t/, $_);
-		if ( defined $id{$a[0]} ) { print $out1 $_."\n"; }
-	}
-	$fh1->close;
-	$out1->close;
 }
 
 =head2

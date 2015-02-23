@@ -17,8 +17,8 @@ getopts('a:b:c:d:e:f:g:i:j:k:l:m:n:o:p:q:r:s:t:u:v:w:x:y:z:h', \%options);
 unless (defined $options{'t'} ) { usage($version); }
 
 # checking parameters
-
-if	($options{'t'} eq 'adpchk')	{ clean_adpchk(\%options, \@ARGV); }	# parse single/paired files
+if	($options{'t'} eq 'pass')	{ clean_pass(\%options, \@ARGV); }	# pass the illumina quality check 
+elsif	($options{'t'} eq 'adpchk')	{ clean_adpchk(\%options, \@ARGV); }	# parse single/paired files
 elsif	($options{'t'} eq 'trimo')	{ clean_trimo(\%options, \@ARGV); }	# parse multi dataset
 elsif	($options{'t'} eq 'align')	{ clean_align(\%options, \@ARGV); }	# parse multi dataset
 elsif	($options{'t'} eq 'barcode')	{ clean_barcode(\%options, \@ARGV); }
@@ -28,6 +28,76 @@ else	{ usage($version); }
 #################################################################
 # kentnf: subroutine						#
 #################################################################
+
+=head2
+ clean_pass: filter out unpassed reads
+=cut
+sub clean_pass
+{
+	my ($options, $files) = @_;
+	my $usage = qq'
+USAGE $0 -t pass input_file_R1 [input_file_R2]
+
+';
+	print $usage and exit unless defined $$files[0];
+	
+	foreach my $f (@$files) {
+		die "[ERR]file not exist $f\n" unless -s $f;
+	}
+
+	foreach my $f (@$files) {
+
+		my $out_file = "pass_".$f;
+		die "[ERR]output file exist $out_file\n" if -s $out_file;
+		my $fho;
+		if ($out_file =~ m/\.gz$/) {
+			open($fho, "| gzip -c > $out_file") || die $!;
+		} else {
+			open($fho, ">".$out_file) || die $!;
+		}
+
+
+		my $fh;
+		if ($f =~ m/\.gz$/) {
+                        open($fh, '-|', "gzip -cd $f") || die $!;
+                } else {
+                        open($fh, $f) || die $!;
+		}
+
+		my ($format, $id, $seq, $id2, $qul, $out, $total, $pass);
+		$total = 0; $pass  = 0;
+		while(<$fh>) {
+			my $id = $_;
+			
+			if ( $id =~ m/^@/ ) {
+				$format = 'fq';
+			} elsif ($id =~ m/^>/) {
+				$format = 'fa';
+			} else {
+				die "[ERR]format $id";
+			}
+			
+			$seq = <$fh>;
+			$out = $id.$seq;
+			
+			$total++;
+
+			if ($format eq 'fq') {
+				$out .= <$fh>;
+				$out .= <$fh>;
+			}
+
+			if ( $id =~ m/1:N:0:/) {
+				print $fho $out;
+				$pass++;
+			} 
+		}
+		close($fh);
+		close($fho);
+
+		print "$f\t$total\t$pass\n";
+	}
+}
 
 =head2
  adpchk -- check adapter for RNASeq
@@ -425,6 +495,7 @@ sub usage
 	print qq'
 USAGE: $0 -t [tool] [options] input file
 
+	pass		only keep reads pass Illumina quality
 	adpchk		check adapter sequence
 	trimo		trim adapter, low quality, and short reads using trimmomatic.	
 	barcode		remove barcode and split file according to barcode

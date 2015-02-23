@@ -45,9 +45,11 @@ USAGE: $0 -t align [options] input
 
 	-p bowtie or bwa (default: bwa)
 	-r rRNA_database_index (default = /home/database/rRNA_silva111)
+	-o output_prefix
+	-a number of CPU (default = 24)
+
 	-u generate unmapped (only for bowtie)
 	-m generate mapped (only for bowtie)
-	-a number of CPU (default = 24)
 	-n edit_distance for bwa / mismatch for bowtie (default = 3) 
 	-k good alignments per read (default = 1)
 	-b report all/10000 hits for bowtie bwa
@@ -79,11 +81,11 @@ USAGE: $0 -t align [options] input
 	my $cpu = 24;
 	$cpu = $$options{'a'} if (defined $$options{'a'} && $$options{'a'} > 0);
 
-	my $align_type = 2;
-	$align_type = 1 if (defined $$options{'y'} && $$options{'y'} == 1);
+	my $out_prefix = '';
+	$out_prefix = $$options{'o'} if (defined $$options{'o'});
 
 	my $tophit = 1;
-	$align_type = $$options{'k'} if (defined $$options{'k'} && $$options{'k'} > 0);
+	$tophit = $$options{'k'} if (defined $$options{'k'} && $$options{'k'} > 0);
 
 	# re-generate parameters according to aligner
 	if ($aligner eq 'bowtie') {
@@ -123,9 +125,9 @@ USAGE: $0 -t align [options] input
 		$input_prefix =~ s/\.(fa|fq|fasta|fastq)$//;
 
 		my ($input_files, $sam, $unmap, $mapped);  $unmap = ''; $mapped = '';
-		$sam = $input_prefix.".sam";
-		$unmap = "--un ".$input_prefix."_unmap" if defined $$options{'u'};
-		$mapped = "--al ".$input_prefix."_mapped" if defined $$options{'m'};
+		$sam = $input_prefix.$out_prefix.".sam";
+		$unmap = "--un ".$input_prefix.$out_prefix."_unmap" if defined $$options{'u'};
+		$mapped = "--al ".$input_prefix.$out_prefix."_mapped" if defined $$options{'m'};
 
 		if ($aligner eq 'bowtie') {
 			$input_files = $r[0];

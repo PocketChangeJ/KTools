@@ -28,7 +28,8 @@ sub elink_sRNA_mRNA
 	my $usage = qq'
 USAGE: $0 -t sRNA-mRNA [options] sRNA_target_result sRNA_exp mRNA_exp
 
-	-f   format of sRNA_target_result (default: fei)		
+	-f   format of sRNA_target_result (default: fei)
+	-m   miRNA match to miRBase
 
 ';
 	print $usage and exit unless scalar @$files == 3;	
@@ -42,6 +43,39 @@ USAGE: $0 -t sRNA-mRNA [options] sRNA_target_result sRNA_exp mRNA_exp
 	my $format = 'fei'; my ($key_a, $key_b) = (7, 2);
 	$format = $$options{'f'} if defined $$options{'f'};
 
+	# load miRNA family info to hash
+	my %miRNA_match = ();
+	if (defined $$options{'m'}) {	
+		die "[ERR]file not exist\n" unless -s $$options{'m'};
+		my $fh = IO::File->new($$options{'m'}) || die $!;
+		while(<$fh>)
+		{
+			# M00007  +       ppt-miR1026a    3       AAATGACTTGAGAGG IIIIIIIIIIIIIII 1       0:G>A,3:A>T
+			chomp;
+			my @a = split(/\t/, $_);
+			my $miR = $a[0];
+			my $family;
+			if ($a[2] =~ m/miR(\d+)/) {
+				$family = "miR".$1;
+			} elsif ( $a[2] =~ m/miR-(\d+)/ ) {
+				$family = "miR-".$1;
+			}
+			die "[ERR]no family for $miR\n" unless defined $family;
+			
+			if (defined $miRNA_match{$miR}) {
+				my @f = split(/#/, $miRNA_match{$miR});
+				my $add = 1;
+				foreach my $f (@f) { $add = 0 if $f eq $family; }
+				$miRNA_match{$miR}.="#".$family if $add == 1;
+			} else {
+				$miRNA_match{$miR} = $family;
+			}
+		}
+		$fh->close;
+	}
+
+
+	# 
 	if ($format eq 'fei') {
 
 	} elsif ($format eq 'sparta') {
@@ -64,7 +98,7 @@ USAGE: $0 -t sRNA-mRNA [options] sRNA_target_result sRNA_exp mRNA_exp
 	# connect mRNA and sRNA exp by target result		
 	my $fh = IO::File->new($target_file) || $!;	
 	my $title = <$fh>; chomp($title);
-	print $title."\t".$sRNA_exp{'title'}."\t".$mRNA_exp{'title'}."\n";
+	print $title."\tfamily\t".$sRNA_exp{'title'}."\t".$mRNA_exp{'title'}."\n";
 	while(<$fh>) 
 	{
 		chomp;
@@ -83,8 +117,11 @@ USAGE: $0 -t sRNA-mRNA [options] sRNA_target_result sRNA_exp mRNA_exp
 		# connect
 		die "[ERR]undef $sRNA_key\n" unless defined $sRNA_exp{$sRNA_key};
 		die "[ERR]undef $mRNA_key\n" unless defined $mRNA_exp{$mRNA_key};
-
-		print "$_\t$sRNA_exp{$sRNA_key}\t$mRNA_exp{$mRNA_key}\n";
+		
+		# family;
+		my $family = 'NA';
+		$family = $miRNA_match{$a[0]} if defined $miRNA_match{$a[0]};
+		print "$_\t$family\t$sRNA_exp{$sRNA_key}\t$mRNA_exp{$mRNA_key}\n";
 	}
 	$fh->close;
 }
