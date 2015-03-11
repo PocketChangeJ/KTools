@@ -103,7 +103,7 @@ then run sRNA tools to parse the output result of cleaveland
 				$srna_seq = $1;
 				$srna_id  = $2;
 			}
-			elsif ($_ =~ m/Allen et al\. score: (\d)/)
+			elsif ($_ =~ m/Allen et al\. score: (\S+)/)
 			{
 				$score = $1;
 			}
