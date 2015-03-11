@@ -40,19 +40,89 @@ USAGE: $0 -t prepare input_AHRD > output
 ';
 	print $usage and exit unless defined $input_file;
 	
-	my ($id, $desc);
-	my $fh = IO::File->new($input_file) || die $!;
-	while(<$fh>)
-	{
-		chomp;
-		next if $_ =~ m/^#/;
-		my @a = split(/\t/);
-		$id = $a[0];
-		$desc = $a[3];
-		print "ID\t$id\nNAME\t$id\nPRODUCT-TYPE\tP\nFUNCTION\t$desc\n";
+	# set file path
+	my $organism_dat    = 'organism-params.dat';
+	my $genetic_element = 'genetic-elements.dat';
+	my $gene_annotation = 'gene-annotation.pf';
+
+# ====================================
+# Please change below content manually
+# ====================================
+	# init organism.dat
+	my $organism_dat_content = qq';;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; generated automatically by kentnf pathway script
+;; attribute format: ID [tab] value
+;; Valid attributes:
+;; ID (unique, 2-10 characters, no spaces) requied
+;; STORAGE (File, MySQL, Oracle) [defaults File]
+;; NAME (genus species) required
+;; ABBREV-NAME
+;; SUBSPECIES
+;; STRAIN
+;; PRIVATE? (either T or NIL) [defaults: NIL]
+;; DOWNLOAD-TIMESTAMP
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+ID	ROSE
+STORAGE	FILE
+NAME	Rosa hybrid cultivar
+ABBREV-NAME	R. hybrid
+AUTHOR	Yi Zheng:BTI
+HOMEPAGE	http://bioinfo.bti.cornell.edu
+EMAIL	yz357\@cornell.edu
+DBNAME	RoseCyc
+COPYRIGHT	<a href=http://bioinfo.bti.cornell.edu>Fei Lab</a>
+NCBI-TAXON-ID	128735
+';
+
+	# create_genetic_elements
+	my $genetic_element_content = qq'ID	TEST-CHROM-1
+NAME	PseudoChromosome
+TYPE	:CHRSM
+CIRCULAR?	N
+ANNOT-FILE	gene-annotation.pf
+//
+';
+# ====================================
+# end of content need manually change
+# ====================================
+
+	# prepare gene annotation file
+	my $gene_annotation_content = '';
+
+	my ($id, $desc, $num); $num = 0;
+        my $fh = IO::File->new($input_file) || die $!;
+        while(<$fh>)
+        {
+                chomp;
+                next if $_ =~ m/^#/;
+                my @a = split(/\t/);
+                next if @a < 4;
+                $id = $a[0];
+                $desc = $a[3];
+		next if $desc eq 'No hit';
+                $gene_annotation_content.="ID\t$id\nNAME\t$id\nPRODUCT-TYPE\tP\nFUNCTION\t$desc\n//\n\n";
+		$num++;
 	}
 	$fh->close;
+
+	# save file to folder
+	mkdir("param-dir") unless -s "param-dir";
+	save_file($organism_dat_content,    "param-dir/$organism_dat");
+	save_file($genetic_element_content, "param-dir/$genetic_element");
+	save_file($gene_annotation_content, "param-dir/$gene_annotation");
+
+	print "./pathway-tools -patho param-dir/\n";
+
 }
+
+sub save_file 
+{
+	my ($content, $file) = @_;
+	open(FH, ">$file") || die $!;
+	print FH $content;
+	close(FH);
+} 
 
 =head2
  pwy_table: convert pathway tools output to tables (for downstrean analysis and MetGenMAP)

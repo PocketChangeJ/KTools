@@ -33,9 +33,11 @@ elsif   ($options{'t'} eq 'norm' )	{ norm(\%options);    }
 elsif   ($options{'t'} eq 'normcut')	{ normcut(\%options); }
 elsif   ($options{'t'} eq 'combine')	{ combine(\%options); }
 elsif	($options{'t'} eq 'range')	{ srna_range(\%options, \@ARGV); }
+elsif   ($options{'t'} eq 'remove')     { srna_remove(\%options, \@ARGV); }
 
 # downstream analysis
 elsif   ($options{'t'} eq 'sparta')	{ srna_sparta(\%options, \@ARGV); }	# sRNA target analysis using degradome dataset
+elsif   ($options{'t'} eq 'cleaveland')	{ srna_cleaveland(\%options, \@ARGV); }	# sRNA target analysis using cleaveland
 elsif   ($options{'t'} eq 'diffexp')	{ srna_diff_exp(); }			# differential expression analysis of sRNA
 
 # tell user how to use pipeline
@@ -45,6 +47,94 @@ else	{ usage($version); }
 #################################################################
 # kentnf: subroutine						#
 #################################################################
+
+
+=head2
+ sRNA_cleaveland
+=cut
+sub srna_cleaveland
+{
+	my ($options, $files) = @_;
+	my $usage = qq'
+Guide how to perfrom cleaveland analysis
+	1. split sRNA sequence
+		split -l input_sRNA_uniq.fa
+	2. run GSTAr for each splited sRNA
+		GSTAr.pl -q -t xa.fasta ref_transcripts.fasta > xa_GSTAr.txt
+		...
+	3. then combine all GSTAr result into one file
+		cat *_GSTAr.txt | grep -v "^#" | grep -v "^Query" > sRNA_GSTAr.txt
+		* then add a correct GSTAr title for the combined sRNA_GSTAr.txt
+
+Then run command for each dRNA library: 
+	CleaveLand4.pl -e dRNA_clean -g sRNA_GSTAr.txt -n ref_transcripts.fasta -o CL4plot -p 0.05 > dRNA_CL4.txt
+
+then run sRNA tools to parse the output result of cleaveland
+	sRNAtool.pl -t cleaveland result1.txt result2.txt ... resultN.txt
+	* will parse result to sPARTA format for next analysis. 
+';
+	print $usage and exit unless defined $$files[0];
+
+	foreach my $f (@$files) {
+		die "[ERR]file not exist $f\n" unless -s $f;
+		my ($tarSeq, $target, $start, $end, $cleavage_pos, $align, $srna_seq, $srna_id, $score, $category, $pvalue);
+		my $out_f = $f;
+		$out_f =~ s/\.txt$//; $out_f.= "_parse.txt";
+		my $out = IO::File->new(">".$out_f) || die $!;
+		print $out "miRname\tTarget\tBindSite\tmiRseq\ttarSeq\tScore\tMismatch\tCIGAR\tcleavage position\tPARE reads\t10 nt window abundance\tPARE reads/window abundance\tcategory\tp-value\tnoise corrected p value\n";	
+		my $in  = IO::File->new($f) || die $!;
+		while(<$in>) {
+			chomp;
+			next if $_ =~ m/^#/;
+			
+			if ($_ =~ m/^5' (\S+) 3' Transcript: (\S+):(\d+)-(\d+) Slice Site:(\d+)/) 
+			{
+				$tarSeq = $1;
+				$target = $2;
+				$start  = $3;
+				$end    = $4;
+				$cleavage_pos = $5;
+				$align = <$in>;	
+				chomp($align);
+				$align = substr($align, 3);
+			}
+			elsif ($_ =~ m/^3' (\S+) 5' Query: (\S+)/)
+			{
+				$srna_seq = $1;
+				$srna_id  = $2;
+			}
+			elsif ($_ =~ m/Allen et al\. score: (\d)/)
+			{
+				$score = $1;
+			}
+			elsif ($_ =~ m/^Degardome Category: (\d)/)
+			{
+				$category = $1;
+			}
+			elsif ($_ =~ m/^Degradome p-value: (\S+)/) 
+			{
+				$pvalue = $1;
+			}
+			elsif ($_ =~ m/^T-Plot file/)
+			{
+				if ($tarSeq && $target && defined $start && defined $end && defined $cleavage_pos && $align && $srna_seq && $srna_id && defined $score && defined $category && $pvalue)
+				{
+					print $out "$srna_id\t$target\t$start-$end\t$srna_seq\t$tarSeq\t$score\tmismatch\t$align\t$cleavage_pos\tNA\tNA\tNA\t$category\tNA\t$pvalue\n";
+				}
+				else
+				{
+					die "[ERR]line error\n";
+				}
+			}
+			else
+			{
+				next;
+			}
+		}
+		$in->close;
+		$out->close;
+	}
+}
 
 =head2
  sRNA_sparta 
@@ -1378,8 +1468,6 @@ USAGE $0 normcut [options]
 	$out1->close;
 	$out2->close;
 	$out3->close;
-	
-
 }
 
 =head2
@@ -1497,16 +1585,98 @@ USAGE: $0 -t range [options] input_files
 	foreach my $f (@$files)
 	{
 		my $output_file = $f.".range";
-	
+		my $format;
 		my $out = IO::File->new(">".$output_file) || die $!;
-		my $in = Bio::SeqIO->new(-format=>'fasta', -file=>$f);
-		while(my $inseq = $in->next_seq) {
-			if (defined $length{$inseq->length}) {
-				print $out ">",$inseq->id,"\n",$inseq->seq,"\n";
+		my $in =  IO::File->new($f) || die $!;
+		while(<$in>) {
+			my $id1 = $_;	 chomp($id1);
+			my $seq = <$in>; chomp($seq);
+
+			if	($id1 =~ m/^>/) { $format = 'fasta'; } 
+			elsif	($id1 =~ m/^@/) { $format = 'fastq'; }
+			
+			my $out_seq = $id1."\n".$seq."\n";
+
+			if ($format eq 'fastq') {
+				$out_seq.= <$in>;
+				$out_seq.= <$in>;
 			}
+
+			my $len = length($seq);
+			if (defined $length{$len}) {
+				print $out $out_seq;
+			} 
 		}
+		$in->close;
 		$out->close;
 	}
+}
+
+=head2
+ srna_remove -- remove sRNA 
+=cut
+sub srna_remove
+{
+        my ($options, $files) = @_;
+        my $usage = qq'
+USAGE: $0 -t remove [options] input_files
+
+        -r      remove fasta file
+	-v	reverse, keep read in removed file
+
+* if the input file has read in removed file, it will be removed
+
+';
+        print $usage and exit unless defined $$files[0];
+        foreach my $f (@$files) {
+                die "[ERR]file not exist $f\n" unless -s $f;
+        }
+
+        print $usage and exit unless defined $$options{'r'};
+	die "[ERR]file not exist\n" unless -s $$options{'r'};
+
+	my $reverse = 0;
+	$reverse = 1 if (defined $$options{'v'} && $$options{'v'} == 1);
+
+	my %rseq;
+	my $in = Bio::SeqIO->new(-format=>'fasta', -file=>$$options{'r'});
+	while(my $inseq = $in->next_seq) {
+		$rseq{$inseq->seq} = 1;
+	}
+
+        foreach my $f (@$files)
+        {
+                my $output_file = $f.".kept";
+                my $format;
+                my $out = IO::File->new(">".$output_file) || die $!;
+                my $in =  IO::File->new($f) || die $!;
+                while(<$in>) {
+                        my $id1 = $_;    chomp($id1);
+                        my $seq = <$in>; chomp($seq);
+
+                        if      ($id1 =~ m/^>/) { $format = 'fasta'; }
+                        elsif   ($id1 =~ m/^@/) { $format = 'fastq'; }
+
+                        my $out_seq = $id1."\n".$seq."\n";
+
+                        if ($format eq 'fastq') {
+                                $out_seq.= <$in>;
+                                $out_seq.= <$in>;
+                        }
+
+			if ($reverse == 1) {
+                        	if (defined $rseq{$seq}) {
+                                	print $out $out_seq;
+                        	}
+			} else {
+				unless (defined $rseq{$seq}) { 
+					print $out $out_seq;
+				}
+			}
+                }
+                $in->close;
+                $out->close;
+        }
 }
 
 =head2
@@ -1541,9 +1711,11 @@ Command:
 	lengthd		length distribution of sRNA	
 	combine		combine sRNA replicates
 	range		select sRNA by length for next analysis
+	remove		remove sRNA 
 	
 	diffexp		perform differential express analysis
 	sparta		sRNA target identification using PARE data
+	cleaveland	sRNA target identification using PARE data
 
 ';
 	exit;
