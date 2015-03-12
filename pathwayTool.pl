@@ -197,6 +197,8 @@ USAGE: $0 -t filter pathway_file
 2) input_file.remove : the removed pathway
 
 ';
+	print $usage and exit unless defined $pathway_file;
+	die "[ERR]file not exist\n" unless -s $pathway_file;
 
 	my $pathway_kept   = $pathway_file.".kept";
 	my $pathway_remove = $pathway_file.".remove";
@@ -214,7 +216,7 @@ USAGE: $0 -t filter pathway_file
 			my $cc = $1;
 			$cc =~ s/cytochrome c\) \(//;
 			if($cc eq 'yeast' || $cc eq 'prokaryotic' || $cc eq 'obligate autotrophs' || $cc eq 'Gram-negative bacteria' ||
-			   $cc eq 'Gram-positive bacteria' || $cc eq 'mammals' || $cc eq 'metazoan')
+			   $cc eq 'Gram-positive bacteria' || $cc eq 'mammals' || $cc eq 'metazoan' || $cc eq 'animals')
 			{
 				print OUT2 $_."\n";
 			}
@@ -283,6 +285,8 @@ USAGE: $0 -t enrich input_gene_list pathway_file
 * the pathway file should be output of pathways tools
 
 ';
+	print $usage and exit unless (defined $gene_list && defined $pathway_file);
+	foreach my $f (($gene_list,$pathway_file)) { die "[ERR]file not exist\n" unless -s $f; }
 
 	# load gene list (changed gene) to hash
 	my %changed_gene;
@@ -414,7 +418,7 @@ END
 	print R $R_CODE;
 	close R;
 
-	unlink($temp_file);
+	#unlink($temp_file);
 
 
 	# better to parse the output file format
