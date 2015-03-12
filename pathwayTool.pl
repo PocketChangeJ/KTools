@@ -19,7 +19,8 @@ getopts('a:b:c:d:e:f:g:i:j:k:l:m:n:o:p:q:r:s:t:u:v:w:x:y:z:h', \%options);
 unless (defined $options{'t'} ) { usage(); }
 
 if	($options{'t'} eq 'prepare')	{ pwy_prepare(@ARGV); }	# prepare files for pathway tools
-elsif	($options{'t'} eq 'table')	{ pwy_table(@ARGV);  }	# convert pathway tools output to tables (for downstrean analysis and MetGenMAP)
+elsif	($options{'t'} eq 'database')	{ pwy_database(@ARGV); }	# convert pathway tools output to tables (for downstrean analysis and MetGenMAP)
+elsif	($options{'t'} eq 'table')	{ pwy_table(@ARGV); }	# convert pathwy data file into tab delimit table 
 elsif	($options{'t'} eq 'filter')	{ pwy_filter(@ARGV); }	# filter pathway tables 
 elsif	($options{'t'} eq 'unique')	{ pwy_uniq(@ARGV); }	# 
 elsif	($options{'t'} eq 'enrich')	{ pwy_enrich(@ARGV); }	# enrichment analysis
@@ -129,7 +130,56 @@ sub save_file
 =cut
 sub pwy_table
 {
-	my $pwy_folder = shift
+	my ($pwy_col, $ahrd) = @_;
+
+	my $usage = qq'
+USAGE: $0 -t table pathways.col AHRD > gene_pathway_table.txt
+
+* format of gene pathway table
+GeneID [TAB] AHRD [TAB] PWY-ID [TAB] PWY-Name
+
+';
+	print $usage and exit unless (defined $pwy_col && defined $ahrd);
+	foreach my $f (($pwy_col, $ahrd)) { die "[ERR]file not exist $f\n" unless -s $f; }
+
+	# load ahrd to hash
+	my %ahrd;
+	my $ah = IO::File->new($ahrd) || die $!;
+	while(<$ah>)
+	{
+		chomp;
+		my @a = split(/\t/, $_);
+		next if scalar @a < 4;
+		$ahrd{$a[0]} = $a[3];
+	}
+	$ah->close;
+
+	# parse pathways.col 
+	my @t;	# array for title
+	my $fh = IO::File->new($pwy_col) || die $!;
+	while(<$fh>) {
+		chomp;
+		next if $_ =~ m/^#/;
+		@t = split(/\t/, $_);
+		die "[ERR]UID title\n" unless $t[0] eq 'UNIQUE-ID';
+		die "[ERR]Name title\n"  unless $t[1] eq 'NAME';
+		last;
+	}
+
+	while(<$fh>)
+	{
+		chomp;
+		next if $_ =~ m/^#/;
+		my @a = split(/\t/, $_);
+		my ($pwy_id, $pwy_name) = ($a[0], $a[1]);
+		for(my $i=2; $i<@a; $i++) {
+			next if $t[$i] ne "GENE-NAME";
+			next unless $a[$i] =~ m/\w/;
+			die "[ERR]Undef AHRD $a[$i]\n" unless defined $ahrd{$a[$i]};
+			print "$a[$i]\t$ahrd{$a[$i]}\t$pwy_id\t$pwy_name\n";
+		}
+	}
+	$fh->close;
 }
 
 =head2
