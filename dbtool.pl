@@ -40,13 +40,20 @@ sub uniport2id
 	while(<FH>) {
 		chomp;
 		if	(/^ID\s+(\S+)/)		{ $id = $1; }
-		elsif	(/^AC\s+(\S+)/)		{ $ac = $1; $ac =~ s/;//ig; }
-		elsif	(/^DE\s+EC=(\S+)/)	{ my $ec = $1; $ec =~ s/;//ig; push(@ec, $ec); } 
+		elsif	(/^AC\s+(\S+)/)		{ 
+			unless ( $ac ) {
+				$ac = $1; 
+				$ac =~ s/;//ig; 
+			}
+		}
+		elsif	(/^DE\s+EC=(\S+)/) { 
+			my $ec = $1; $ec =~ s/;//ig; 
+			push(@ec, $ec); 
+		} 
 		elsif	(/^\/\//) {
 			die "[ERR]undef ID or ACC\n" unless ($id && $ac);
 			my $ec_all = '';
 			$ec_all = join(";", @ec) if (scalar @ec > 0);
-			print $ec_all."\t$id|$ac\n" if (scalar @ec > 1);
 			print OUT "$db|$ac|$id\t$ec_all\n";	
 			$ac = ''; $id = ''; @ec = ();
 		}
