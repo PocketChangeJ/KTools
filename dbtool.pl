@@ -21,7 +21,16 @@ else	{ usage(); }
 #################################################################
 
 =head2
- convert uniport to fasta 
+ uniprot2go -- convert uniport to GO
+=cut
+sub uniprot2go 
+{
+	my $input = shift;
+
+}
+
+=head2
+ uniport2id -- convert uniport to fasta 
 =cut
 sub uniport2id
 {
@@ -59,8 +68,13 @@ USAGE: $0 -t uniprot2ec input_database(dat format)
 		elsif	(/^\/\//) {
 			die "[ERR]undef ID or ACC\n" unless ($id && $ac);
 			my $ec_all = '';
-			$ec_all = join(";", @ec) if (scalar @ec > 0);
-			print OUT "$db|$ac|$id\t$ec_all\n";	
+			$ec_all = join(";", @ec); 
+			if (scalar @ec > 0) {
+				$ec_all = join(";", @ec);
+				print OUT "$db|$ac|$id\t$ec_all\n";
+			} else {
+				print OUT "$db|$ac|$id\n";
+			}
 			$ac = ''; $id = ''; @ec = ();
 		}
 		else	{ next; }	
@@ -77,8 +91,9 @@ sub usage
 	my $usage = qq'
 USAGE: $0 -t tool [options]
 
-	uniprot2ec	prepare uniprot database for ec num table (For pathway analysis)
+	uniprot2ec	[]	prepare uniprot database for ec num table (For pathway analysis)
 	uniprot2go	prepare uniprot database for go num (For GO analysis)
+
 ';
 
 	print $usage;

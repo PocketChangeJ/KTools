@@ -31,15 +31,49 @@ else	{ usage(); }
 =cut
 sub pwy_prepare
 {
+	my ($options, $files) = @_;
 	my $input_file = shift;
 
 	my $usage = qq'
-USAGE: $0 -t prepare input_AHRD > output 
+USAGE: $0 -t prepare [options] input_AHRD > output 
+
+	-a	TrEMBL_EC_ID
+	-b	SwissProt_EC_ID
+	-c	UniProt_GO
 
 * the output file should be end with .pf
 
 ';
-	print $usage and exit unless defined $input_file;
+	print $usage and exit unless defined $$files[0];
+	my $input_file = $$files[0];
+	die "[ERR]file not exist\n" unless -s $$files[0];
+
+	# load plant EC number to hash 
+	# key: uniprot_id, value: EC number
+	my %uniprot_ec;
+	if (defined $$options{'a'} && defined $$options{'b'} ) {
+		my ($tr_ec, $sp_ec) = ($$options{'a'}, $$options{'b'});
+		foreach my $f (($tr_ec, $sp_ec)) {
+			die "[ERR]file not exist $f\n" unless -s $f;
+			my $fh = IO::File->new($f) || die $!;
+			while(<$fh>) {
+				chomp;
+				my @a = split(/\t/, $_);
+				next if @a == 1;
+				$uniprot_ec{$a[0]} = $a[1];
+			}
+			$fh->close;
+		}
+	}
+
+	# load plant GO ID to hash
+	# key: uniprot_id, value: GO
+	my %uniprot_go;
+	if (defined $$options{'c'}) {
+		die "[ERR]file not exist\n" unless -s $$options{'c'};
+		my 
+	}
+
 	
 	# set file path
 	my $organism_dat    = 'organism-params.dat';
