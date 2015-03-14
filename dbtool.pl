@@ -5,22 +5,16 @@
 =cut
 use strict;
 use warnings;
+use IO::File;
+use Getopt::Std;
 
+my %options;
+getopts('a:b:c:d:e:f:g:i:j:k:l:m:n:o:p:q:r:s:t:u:v:w:x:y:z:h', \%options);
+unless (defined $options{'t'} ) { usage(); }
 
-
-
-
-
-my $usage = qq'
-USAGE: $0 input_database(dat format)
-
-';
-
-my $database = shift || die $usage;
-
-my $db = 'sp';
-$db = 'tr' if $database =~ m/trembl/ig;
-uniport2id($database, $db);
+if	($options{'t'} eq 'uniprot2ec')		{ uniport2id(\@ARGV); }
+elsif	($options{'t'} eq 'uniprot2go')		{ uniport2go(\@ARGV); }
+else	{ usage(); }
 
 #################################################################
 # kentnf: subroutine						#
@@ -31,7 +25,19 @@ uniport2id($database, $db);
 =cut
 sub uniport2id
 {
-	my ($input, $db) = @_;
+	my ($input) = @_;
+
+	my $usage = qq'
+USAGE: $0 -t uniprot2ec input_database(dat format)
+
+';
+	print $usage and exit unless defined $input;
+	die "[ERR]file not exist\n" unless -s $input;
+
+
+	my $db = 'sp';
+	$db = 'tr' if $input =~ m/trembl/ig;
+
 	my $output = $input.".id.txt";
 
 	my ($id, $ac, @ec);
@@ -62,4 +68,27 @@ sub uniport2id
 	close(FH);
 	close(OUT);
 }
+
+=head2
+ usage -- print usage information
+=cut
+sub usage
+{
+	my $usage = qq'
+USAGE: $0 -t tool [options]
+
+	uniprot2ec	prepare uniprot database for ec num table (For pathway analysis)
+	uniprot2go	prepare uniprot database for go num (For GO analysis)
+';
+
+	print $usage;
+	exit;
+}
+
+
+
+
+
+
+
 

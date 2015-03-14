@@ -38,6 +38,7 @@ elsif   ($options{'t'} eq 'remove')     { srna_remove(\%options, \@ARGV); }
 # downstream analysis
 elsif   ($options{'t'} eq 'sparta')	{ srna_sparta(\%options, \@ARGV); }	# sRNA target analysis using degradome dataset
 elsif   ($options{'t'} eq 'cleaveland')	{ srna_cleaveland(\%options, \@ARGV); }	# sRNA target analysis using cleaveland
+elsif	($options{'t'} eq 'cmbtarget')	{ srna_cmbtarget(\%options, \@ARGV); }	# combine sRNA target analysis result
 elsif   ($options{'t'} eq 'diffexp')	{ srna_diff_exp(); }			# differential expression analysis of sRNA
 
 # tell user how to use pipeline
@@ -48,6 +49,147 @@ else	{ usage($version); }
 # kentnf: subroutine						#
 #################################################################
 
+=head2
+ sRNA_cmbtarget -- combine srna target analysis results in to one table 
+
+ description of combine method
+ 1. load miRpred target to hash, add three NA col for cleavage info
+ 2. load sPARTA dRNA target to same hash, convert format to miRpred
+	if miRpred and sPARTA target same, using sPARTA info
+	if miR's sPARTA target same, using one with lower category
+	if the category same, using the one with lower pvalue
+=cut
+sub srna_cmbtarget
+{
+	my ($options, $dtarget_files) = @_;
+
+	my $usage = qq'
+USAGE: $0 -t cmbtarget -a target_file(miRPred) target_files(dRNA)
+
+* the target files (dRNA) could be more than one file
+* the target files (dRNA) could be sPARTA or CleaveLand4 result
+
+';
+	print $usage and exit unless defined $$dtarget_files[0];
+	foreach my $f (@$dtarget_files) {
+		die "[ERR]file not exist $f\n" unless -s $f;
+	}
+
+	# the output format should be
+	# miR-ID mRNA-ID start-end score align-mRNA align-sRNA alignment(CIGAR) cleavagePosition category correctedPvalue
+	my $title = "miR-ID\ttarget-ID\tstart-end\tscore\talign-mRNA\talign-sRNA\talignment(CIGAR)\tcleavagePos\tcat\tPvalue";
+
+	# init hash
+	my %all_file;
+	my %miR_target;
+	my %miR_target_file;
+
+	# check if miRPred target exist, then load miRPred target to hash 
+	if (defined $$options{'a'}) 
+	{
+		my $target_file = $$options{'a'};
+		die "[ERR]file not exist\n" unless -s $target_file;
+	
+		my $fh1 = IO::File->new($target_file) || die $!;
+		<$fh1>; # skip title
+		while(<$fh1>) {
+			chomp;
+			# miR-ID 
+			# mRNA-ID 
+			# start   
+			# end     
+			# score   
+			# align-mRNA      
+			# align-sRNA      
+			# alignment       
+			# strand
+			my @a = split(/\t/, $_);
+			die "[ERR]line $_\n" unless @a == 9;
+			my $target_key = $a[1]."#".$a[2]."-".$a[3];
+			$miR_target{$a[0]}{$target_key} = "$a[0]\t$a[1]\t$a[2]-$a[3]\t$a[4]\t$a[5]\t$a[6]\t$a[7]\tNA\tNA\tNA";
+			$miR_target_file{$a[0]}{$target_key} = "miRpred";
+			$all_file{"miRpred"} = 1;
+		}
+		$fh1->close;
+	}
+
+	# load dtarget to hash
+	foreach my $f (@$dtarget_files) {
+		$all_file{$f} = 1;
+		my $fh = IO::File->new($f) || die $!;
+		<$fh>; # skip title
+		while(<$fh>) {
+			chomp;
+			# miRname            ---
+			# Target           
+			# BindSite  
+			# miRseq  
+			# tarSeq             should be same
+			# Score   
+			# Mismatch        
+			# CIGAR              ---
+			# cleavage position  --- cleavage pos may diff 1-2 base for same target       
+			# PARE reads         --- below 6 col may diff among samples
+			# 10 nt window abundance  
+			# PARE reads/window abundance     
+			# category           --- choose the best category as final result       
+			# p-value 
+			# noise corrected p value
+			my @a = split(/\t/, $_);
+			die "[ERR]line $_\n" unless @a == 15;
+			my $target_value = "$a[0]\t$a[1]\t$a[2]\t$a[5]\t$a[4]\t$a[3]\t$a[7]\t$a[8]\t$a[12]\t$a[14]";
+                        if (defined $miR_target{$a[0]}{$a[1]."#".$a[2]}) {
+
+                                # get best target info
+                                my @m = split(/\t/, $miR_target{$a[0]}{$a[1]."#".$a[2]});
+                                if ($m[8] eq "NA") {            # replace  miRpred result
+                                        #print $f."\t".$target_value."\n";
+                                        #print $miR_target_file{$a[0]}{$a[1]."#".$a[2]}."\t".$miR_target{$a[0]}{$a[1]."#".$a[2]}."\n";
+                                        $miR_target{$a[0]}{$a[1]."#".$a[2]} = $target_value;
+                                } elsif ($a[12] < $m[8]) {      # using best category
+                                        #print $f."\t".$target_value."\n";
+                                        #print $miR_target_file{$a[0]}{$a[1]."#".$a[2]}."\t".$miR_target{$a[0]}{$a[1]."#".$a[2]}."\n";
+                                        #print "$a[12] < $m[8]\n";
+                                        $miR_target{$a[0]}{$a[1]."#".$a[2]} = $target_value;
+                                } elsif ($a[12] == $m[8]) {
+                                        if ($a[14] < $m[9]) {   # using best correct pvalue
+                                                #print $f."\t".$target_value."\n";
+                                                #print $miR_target_file{$a[0]}{$a[1]."#".$a[2]}."\t".$miR_target{$a[0]}{$a[1]."#".$a[2]}."\n";
+                                                $miR_target{$a[0]}{$a[1]."#".$a[2]} = $target_value;
+                                        }
+				}
+				# get target _file
+				$miR_target_file{$a[0]}{$a[1]."#".$a[2]}.= "\t".$f;
+			} else {
+				$miR_target{$a[0]}{$a[1]."#".$a[2]} = $target_value;
+				$miR_target_file{$a[0]}{$a[1]."#".$a[2]} = $f;
+			}
+		}
+		$fh->close;
+	}
+
+        # print combine result
+	print $title;
+	foreach my $f (sort keys %all_file) {
+		print "\t".$f;
+	}
+	print "\n";
+
+	foreach my $miR_id (sort keys %miR_target)
+	{
+		foreach my $tkey (sort keys %{$miR_target{$miR_id}})
+		{
+			print $miR_target{$miR_id}{$tkey};
+			my @f = split(/\t/, $miR_target_file{$miR_id}{$tkey});
+			my %uf; foreach my $f (@f) { $uf{$f} = 1; }
+                        
+			foreach my $f (sort keys %all_file) {
+				if (defined $uf{$f}) { print "\t1"; } else { print "\t0"; }
+			}
+			print "\n";
+		}
+	}
+}
 
 =head2
  sRNA_cleaveland
