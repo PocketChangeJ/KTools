@@ -13,12 +13,13 @@ use strict;
 use warnings;
 use IO::File;
 use Getopt::Std;
+use FindBin;
 
 my %options;
 getopts('a:b:c:d:e:f:g:i:j:k:l:m:n:o:p:q:r:s:t:u:v:w:x:y:z:h', \%options);
 unless (defined $options{'t'} ) { usage(); }
 
-if	($options{'t'} eq 'prepare')	{ pwy_prepare(@ARGV); }	# prepare files for pathway tools
+if	($options{'t'} eq 'prepare')	{ pwy_prepare(\%options, \@ARGV); }	# prepare files for pathway tools
 elsif	($options{'t'} eq 'database')	{ pwy_database(@ARGV); }	# convert pathway tools output to tables (for downstrean analysis and MetGenMAP)
 elsif	($options{'t'} eq 'table')	{ pwy_table(@ARGV); }	# convert pathwy data file into tab delimit table 
 elsif	($options{'t'} eq 'filter')	{ pwy_filter(@ARGV); }	# filter pathway tables 
@@ -32,14 +33,11 @@ else	{ usage(); }
 sub pwy_prepare
 {
 	my ($options, $files) = @_;
-	my $input_file = shift;
 
 	my $usage = qq'
 USAGE: $0 -t prepare [options] input_AHRD > output 
 
-	-a	TrEMBL_EC_ID
-	-b	SwissProt_EC_ID
-	-c	UniProt_GO
+	-c	UniProt_GO (prepared by dbtool -- uniprot2go)
 
 * the output file should be end with .pf
 
@@ -48,33 +46,75 @@ USAGE: $0 -t prepare [options] input_AHRD > output
 	my $input_file = $$files[0];
 	die "[ERR]file not exist\n" unless -s $$files[0];
 
+	# check uniprot EC database
+	my $tr_ec = $FindBin::RealBin."/database/uniprot_trembl_plants.dat.id.txt.gz";
+	my $sp_ec = $FindBin::RealBin."/database/uniprot_sprot_plants.dat.id.txt.gz";
+
+	# load uniprot ID to hash, 
+	my %pre_load_id; # key: uniprot id(AHRD)
+	my $fha = IO::File->new($input_file) || die $!;
+	while(<$fha>) {
+		chomp;
+		next if $_ =~ m/^#/;
+		my @a = split(/\t/);
+		next if @a < 4;
+		my $uniprot_id = $a[1];
+		my $uid = $uniprot_id;
+		$uid =~ s/^tr\|//;
+		$uid =~ s/^sp\|//;
+
+		$pre_load_id{$uid} = 1;
+		$pre_load_id{$uniprot_id} = 1;
+	}
+	$fha->close;
+	print scalar(keys(%pre_load_id))." uniprot ID loaded\n";
+
 	# load plant EC number to hash 
 	# key: uniprot_id, value: EC number
 	my %uniprot_ec;
-	if (defined $$options{'a'} && defined $$options{'b'} ) {
-		my ($tr_ec, $sp_ec) = ($$options{'a'}, $$options{'b'});
-		foreach my $f (($tr_ec, $sp_ec)) {
-			die "[ERR]file not exist $f\n" unless -s $f;
-			my $fh = IO::File->new($f) || die $!;
-			while(<$fh>) {
-				chomp;
-				my @a = split(/\t/, $_);
-				next if @a == 1;
+	foreach my $f (($tr_ec, $sp_ec)) {
+		die "[ERR]file not exist $f\n" unless -s $f;
+		my $fh;
+		if ($f =~ m/\.gz$/) {
+			open($fh, '-|', "gzip -cd $f") || die $!;
+		} else {
+			open($fh, $f) || die $!;
+		}
+		while(<$fh>) {
+			chomp;
+			my @a = split(/\t/, $_);
+			next if @a == 1;
+			if (defined $pre_load_id{$a[0]}) {
 				$uniprot_ec{$a[0]} = $a[1];
 			}
-			$fh->close;
 		}
+		close($fh);
 	}
+	print scalar(keys(%uniprot_ec))." uniprot EC loaded\n";
 
 	# load plant GO ID to hash
 	# key: uniprot_id, value: GO
+	# * notice, the uniprot id does not have database name
 	my %uniprot_go;
 	if (defined $$options{'c'}) {
 		die "[ERR]file not exist\n" unless -s $$options{'c'};
-		my 
+		my $fh;
+		if ($$options{'c'} =~ m/\.gz$/) {
+			open($fh, '-|', "gzip -cd $$options{'c'}") || die $!;
+		} else {
+			open($fh, $$options{'c'}) || die $!;
+		}
+		while(<$fh>) {
+			chomp;
+			my @a = split(/\t/, $_, 2);
+			if (defined $pre_load_id{$a[0]}) {
+				$uniprot_go{$a[0]} = $a[1];
+			}
+		}
+		close($fh);
 	}
+	print scalar(keys(%uniprot_go))." uniprot GO loaded\n";
 
-	
 	# set file path
 	my $organism_dat    = 'organism-params.dat';
 	my $genetic_element = 'genetic-elements.dat';
@@ -125,7 +165,7 @@ ANNOT-FILE	gene-annotation.pf
 	# prepare gene annotation file
 	my $gene_annotation_content = '';
 
-	my ($id, $desc, $num); $num = 0;
+	my ($id, $uniprot_id, $desc, $num); $num = 0;
         my $fh = IO::File->new($input_file) || die $!;
         while(<$fh>)
         {
@@ -134,9 +174,31 @@ ANNOT-FILE	gene-annotation.pf
                 my @a = split(/\t/);
                 next if @a < 4;
                 $id = $a[0];
+		$uniprot_id = $a[1];
                 $desc = $a[3];
+		my $ec = '';
+		my $go = '';
+		if ( defined $uniprot_ec{$uniprot_id} ) {
+			my @ecs = split(/;/, $uniprot_ec{$uniprot_id});
+			foreach my $ec_id ( @ecs ) {
+				$ec.="EC\t$ec_id\n";	# should be update
+			}
+		}
+		
+		my $uid = $uniprot_id;
+		$uid =~ s/tr\|//; $uid =~ s/sp\|//;
+		if ( defined $uniprot_go{$uid}) {
+			my @gos = split(/; /, $uniprot_go{$uid});
+			foreach my $go_id (@gos) {
+				$go.="DBLINK\t$go_id\n";	# should be update
+			}
+		}
+		
 		next if $desc eq 'No hit';
-                $gene_annotation_content.="ID\t$id\nNAME\t$id\nPRODUCT-TYPE\tP\nFUNCTION\t$desc\n//\n\n";
+                $gene_annotation_content.="ID\t$id\nNAME\t$id\nPRODUCT-TYPE\tP\nFUNCTION\t$desc\n";
+		$gene_annotation_content.=$ec if $ec;
+		$gene_annotation_content.=$go if $go;
+		$gene_annotation_content.="//\n\n";
 		$num++;
 	}
 	$fh->close;
