@@ -21,11 +21,62 @@ unless (defined $options{'t'} ) { usage($version); }
 if	($options{'t'} eq 'b2table') 	{ blast_to_table(\%options, \@ARGV); }
 elsif	($options{'t'} eq 'brh') 	{ blast_brh(\%options, \@ARGV); }
 elsif	($options{'t'} eq 'unique')	{ blast_unique(\%options, \@ARGV); }
+elsif   ($options{'t'} eq 'split')      { blast_split(\%options, \@ARGV); }
 else	{ usage($version); }
 
 #================================================================
 # kentnf: subroutine						
 #================================================================
+
+=head
+ blast_split: split blast result
+=cut
+sub blast_split
+{
+	my ($options, $files) = @_;
+	my $usage = qq'
+
+';
+
+	my $size_limit = 100;     # 100M
+	$size_limit = $size_limit * 1024 * 1024;
+
+	my $infile = $$files[0];
+	die "[ERR]file not exist\n" unless -s $infile;
+
+	my $outprefix = 'splitBlast';
+
+	my $fnum = 0;
+	my $fout = '';
+	my $flen = 0;
+
+	open(FH, $infile) || die $!;
+	while(<FH>)
+	{
+        	$fout.=$_;
+		$flen = $flen + length($_);
+
+		if ($_ =~ m/Number of sequences better than/ && $flen > $size_limit) {
+                	$fnum++;
+	                open(OUT, ">".$outprefix.$fnum) || die $!;
+        	        print OUT $fout;
+                	close(OUT);
+
+	                $flen = 0;
+        	        $fout = '';
+        	}
+
+        	if (eof && $flen > 0) {
+			$fnum++;
+			open(OUT, ">".$outprefix.$fnum) || die $!;
+			print OUT $fout;
+			close(OUT);
+		}
+	}
+	close(FH);
+}
+
+
 =head
  blast_unique: remove redundancy sequence
 =cut
