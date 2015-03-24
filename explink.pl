@@ -59,7 +59,10 @@ USAGE: $0 -t sRNA-mRNA [options] sRNA_target_result sRNA_exp mRNA_exp
 				$family = "miR".$1;
 			} elsif ( $a[2] =~ m/miR-(\d+)/ ) {
 				$family = "miR-".$1;
+			} elsif ( $a[2] =~ m/miR-D(\d+)/) {
+				$family = "miR-D".$1;
 			}
+			
 			die "[ERR]no family for $miR\n" unless defined $family;
 			
 			if (defined $miRNA_match{$miR}) {

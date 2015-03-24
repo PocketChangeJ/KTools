@@ -1858,6 +1858,7 @@ Command:
 	diffexp		perform differential express analysis
 	sparta		sRNA target identification using PARE data
 	cleaveland	sRNA target identification using PARE data
+	cmbtarget	combine target analysis result by CL4 or sPARTA
 
 ';
 	exit;
