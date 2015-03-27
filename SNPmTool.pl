@@ -478,7 +478,7 @@ USAGE: $0 -t filter1 input_file output_file
 		$a[6] =~ s/\*/$a[4]/g;
         	$a[8] =~ s/\*/$a[4]/g;
 
-        	if ($cov1 >= 4 && $cov2 >= 4) {
+        	if ($cov1 >= 3 && $cov2 >= 3) {
                 	$output_line .= join("\t", @a)."\n";
         	}
 	}

@@ -1044,49 +1044,61 @@ USAGE: $0 -t corre [options] input_exp.txt > output_corre.txt
 
 ';
 
-	print "[ERR]no exp file\n$usage" and exit unless defined $$file[0];
+	print $usage and exit unless defined $$file[0];
 	my $exp_rpkm_file = $$file[0];
 	print "[ERR]no exp file $exp_rpkm_file\n" and exit unless -s $exp_rpkm_file;
 
-	my %sample_exp;
-	my $fh = IO::File->new($exp_rpkm_file) || die $exp_rpkm_file;
-	# parse first title line
-	my $title = <$fh>; chomp($title);
-	my @title = split(/\t/, $title);
-	while(<$fh>)
+	if (scalar(@$file) == 2) 
 	{
-        	chomp;
-		my @a = split(/\t/, $_);
-		for(my $i=1; $i<@a; $i++)
-		{
-			my $tt = $title[$i];
-			if (defined $sample_exp{$tt})   { $sample_exp{$tt}.="\t".$a[$i]; }
-			else                            { $sample_exp{$tt} = $a[$i]; }
-        	}
+
 	}
-	$fh->close;
-
-	#################################################################
-	# produce correlation for every line data                       #
-	#################################################################
-
-	print "Sample";
-	shift @title;
-	foreach my $tt ( @title ) { print "\t".$tt; }
-	print "\n";
-
-	foreach my $tt_i ( @title )
+	elsif (scalar(@$file) == 1) 
 	{
-        	print $tt_i;
-		my @exp_i = split(/\t/, $sample_exp{$tt_i});
-
-		foreach my $tt_j ( @title )
+		my %sample_exp;
+		my $fh = IO::File->new($exp_rpkm_file) || die $exp_rpkm_file;
+		# parse first title line
+		my $title = <$fh>; chomp($title);
+		my @title = split(/\t/, $title);
+		while(<$fh>)
 		{
-                	my @exp_j = split(/\t/, $sample_exp{$tt_j});
-			my $correlation = corr([@exp_i], [@exp_j]);
-			print "\t".$correlation;
+        		chomp;
+			my @a = split(/\t/, $_);
+			for(my $i=1; $i<@a; $i++)
+			{
+				my $tt = $title[$i];
+				if (defined $sample_exp{$tt})   { $sample_exp{$tt}.="\t".$a[$i]; }
+				else                            { $sample_exp{$tt} = $a[$i]; }
+	       	 	}
 		}
+		$fh->close;
+
+		#################################################################
+		# produce correlation for every line data                       #
+		#################################################################
+
+		print "Sample";
+		shift @title;
+		foreach my $tt ( @title ) { print "\t".$tt; }
 		print "\n";
+
+		foreach my $tt_i ( @title )
+		{
+	        	print $tt_i;
+			my @exp_i = split(/\t/, $sample_exp{$tt_i});
+
+			foreach my $tt_j ( @title )
+			{
+	                	my @exp_j = split(/\t/, $sample_exp{$tt_j});
+				my $correlation = corr([@exp_i], [@exp_j]);
+				print "\t".$correlation;
+			}
+			print "\n";
+		}
+
+	} 
+	else 
+	{
+
 	}
 }
 

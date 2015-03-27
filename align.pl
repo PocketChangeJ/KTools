@@ -178,14 +178,13 @@ sub check_index
 	if ($aligner eq 'bowtie') {
 		my $build = 0;
 		foreach my $f (($r.".1.ebwt", $r.".2.ebwt", $r.".3.ebwt", $r.".4.ebwt", $r.".rev.1.ebwt", $r.".rev.2.ebwt")) {
-			warn "[WARN]ref index missing: $f\n" unless -s $f;
-			$build = 1;
+			warn "[WARN]ref index missing: $f\n" and $build = 1 unless -s $f;
 		}
 		run_cmd("bowtie-build $r $r") if $build;
 	} elsif ($aligner eq 'bwa') {
 		my $build = 0;
 		foreach my $f ( ($r.".amb", $r.".ann", $r.".bwt", $r.".pac", $r.".sa", $r.".fai") ) {
-                	warn "[WARN]ref index missing: $f\n" unless -s $f;
+                	warn "[WARN]ref index missing: $f\n" and $build = 1 unless -s $f;
         	}
 		run_cmd("bwa index $r") if $build;
 		run_cmd("samtools faidx $r") if $build;

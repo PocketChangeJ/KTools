@@ -188,7 +188,7 @@ sub filter_ByReadLength
 		{
 			chomp;
 			my @a = split(/\t/, $_);
-			if ( length($a[9]) eq $read_length ){ print $out $_."\n"; }
+			if ( length($a[9]) >= 21 && length($a[9]) <=24 ){ print $out $_."\n"; }
 		}
 	}
 

@@ -58,9 +58,10 @@ USAGE: $0 -t correctF [options] pb_align.sam illumina_align.bam
 	# set parameters
 	my $sr_junc_depth = 1;		# junction depth for illumina reads	
 	my $juction_flank_len = 5;	# search range of edit distance around junction
-	my $ed_cutoff = 0.10;		# read with more than 25% edit distance will be ignore
-	my $mismatch_cutoff = 0.05;	# reads with more than 20% mismatch will be ignore
-	my $clip_cutoff = 30;		# reads with 30 soft clip will be ignore
+	my $ed_cutoff = 0.20;		# reads with more than 25% edit distance will be ignore
+	my $mismatch_cutoff = 0.10;	# reads with more than 20% mismatch will be ignore
+	my $clip_cutoff = 100;		# reads with more than 100 soft clip will be ignore
+	my $clip_cov    = 0.1;		# reads with more than 10% soft clip will be ignore
 
 	# load illumina junctions
 	my %sr_junction;
@@ -90,6 +91,7 @@ USAGE: $0 -t correctF [options] pb_align.sam illumina_align.bam
 	# set output
 	my $pb_correct_seq = '';
 	my $pb_raw_seq = '';
+	my $pb_correct_sam = '';
 
 	# parse the pb sam file
 	my ($ed, $md, $nm);
@@ -97,7 +99,7 @@ USAGE: $0 -t correctF [options] pb_align.sam illumina_align.bam
 	while(<$fh0>)
 	{
 		chomp;
-		next if $_ =~ m/^@/;
+		if ($_ =~ m/^@/) { $pb_correct_sam.=$_."\n"; next; }
 		my @a = split(/\t/, $_);
 		next if $a[1] eq '4';
 		my $cigar = $a[5];
@@ -135,8 +137,8 @@ USAGE: $0 -t correctF [options] pb_align.sam illumina_align.bam
 		}
 
 		# report statistics info
-		print "$a[0]\t$a[1]\t$a[2]\t$apos\t",length($seq),"\t$total_clip\t$ed\t$ins_num\t$del_num\t$mis_num\n";
-		next;
+		# print "$a[0]\t$a[1]\t$a[2]\t$apos\t",length($seq),"\t$total_clip\t$ed\t$ins_num\t$del_num\t$mis_num\n";
+		# next;
 
 		# find abnormal junction
 		# 1. check if the pb junction support by illumina
@@ -161,12 +163,27 @@ USAGE: $0 -t correctF [options] pb_align.sam illumina_align.bam
 			}
 
 			# check if the pb junction have mismatches
-			for(my $p=$left_jpos-$juction_flank_len+1; $p<=$left_jpos+$juction_flank_len; $p++) 
+			my $connect_error = 0;
+			my %connect_hash = ();
+			my $p;
+			for($p=$left_jpos-$juction_flank_len+1; $p<=$left_jpos+$juction_flank_len; $p++) 
 			{
 				if (defined $$md_correct{$p}) {
-					unless ($$md_correct{$p} =~ m/^\^/) {
-						# print $a[0]."\t".$jstart."-".$jend."\t"."\t".$p."-".$$md_correct{$p}."\n"; # mismatch error arround junction
-					}
+					$connect_error++;
+					#print $a[0]."\t".$jstart."-".$jend."\t".$left_jpos."-".$p."-".$$md_correct{$p}."\n"; # mismatch error arround junction
+				} else {
+					$connect_hash{$p-1} = $connect_error if $connect_error > 0;
+					$connect_error = 0;
+				}
+			}
+			$connect_hash{$p-1} = $connect_error if $connect_error > 0;
+
+			foreach my $p_end (sort keys %connect_hash) {
+				my $len = $connect_hash{$p_end};
+				my $p_start = $p_end - $len + 1;
+				if ($p_start < $left_jpos && $p_end > $left_jpos+1 && $len >= 5) {
+					$unsupport_junc = 1;
+					print "$a[0]\t$left_jpos --- $p_start -- $p_end\t$len\n";
 				}
 			}
 		}
@@ -180,10 +197,14 @@ USAGE: $0 -t correctF [options] pb_align.sam illumina_align.bam
 		# remove soft clip, hard clip read
 		# remove reads according to edit distance, and number of mismatch
 		# remove reads that not all junction supported by illumina
-		if ($total_clip > $clip_cutoff || $cigar =~ m/H/ || ($ed/length($correct_seq)) > $ed_cutoff || ($mis_num/length($correct_seq)) > $mismatch_cutoff || $unsupport_junc == 1) {
+		if ($total_clip > $clip_cutoff || ($total_clip/length($correct_seq)) > $clip_cov || 
+		    ($ed/length($correct_seq)) > $ed_cutoff || ($mis_num/length($correct_seq)) > $mismatch_cutoff || 
+		    $cigar =~ m/H/ || $unsupport_junc == 1) 
+		{
 			$pb_raw_seq.= ">$a[0] $a[2]:$apos\n$raw_seq\n";
 		} else {	
 			$pb_correct_seq.= ">$a[0] $a[2]:$apos:$left_clip:$right_clip\n$correct_seq\n";
+			$pb_correct_sam.=$_."\n";
 		}
 	}
 	$fh0->close;
@@ -192,9 +213,11 @@ USAGE: $0 -t correctF [options] pb_align.sam illumina_align.bam
 	my $out_prefix = $pb_sam; $out_prefix =~ s/\.sam$//;
 	my $pb_raw_file = $out_prefix."_raw.fasta";
 	my $pb_correct_file = $out_prefix."_correct.fasta";
+	my $pb_correct_samf = $out_prefix."_correct.sam";
 
 	save_file($pb_raw_seq, $pb_raw_file);
-	save_file($pb_correct_seq, $pb_correct_file);	
+	save_file($pb_correct_seq, $pb_correct_file);
+	save_file($pb_correct_sam, $pb_correct_samf);
 }
 
 # child of pb_correctF
@@ -314,7 +337,13 @@ sub correct_pb_seq
 
 		if ($md_content =~ m/^\^/) {
 			$md_hash{$md_pos}=$md_content;
-			$md_correct_pos = $md_correct_pos + length($md_content);
+
+			my @mm = split(//, $md_content); shift @mm;
+			foreach my $m (@mm) {
+				$md_correct_pos++;
+				$md_correct{$md_correct_pos} = $m;
+			}
+
 		} else {
 			my @mm = split(//, $md_content);
 			for(my $i=0; $i<@mm; $i++) {
@@ -322,9 +351,12 @@ sub correct_pb_seq
 				#print "--",$md_pos+1,"\t",$mm[$i],"\n";
 				$md_pos++;
 			}
-			$md_correct_pos = $md_correct_pos + length($md_content)-1;
+
+			foreach my $m (@mm){
+				$md_correct_pos++;
+				$md_correct{$md_correct_pos} = $m;
+			}
 		}
-		$md_correct{$md_correct_pos} = $md_content;
 		# print "$md_correct_pos\t$md_content\n";
 	}
 
@@ -333,8 +365,6 @@ sub correct_pb_seq
 	for(my $i=1; $i<=length($temp_seq1); $i++) 
 	{
 		my $base = substr($temp_seq1, $i-1, 1);	
-
-
 		if (defined $md_hash{$i}) 
 		{
 			if ($md_hash{$i} =~ m/^\^/) {

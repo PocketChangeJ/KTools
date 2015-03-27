@@ -138,8 +138,13 @@ USAGE $0 -t convert [options] input_gtf
 	die "[ERR]file format: $input_gtf\n" unless $input_gtf =~ m/\.gtf$/i;
 	
 	my $output_file = $input_gtf; $output_file =~ s/\.gtf$/\.bed/i;
-	my $output_file = $$options{'o'} if defined $$options{'o'};
-	die "[ERR]file format: $output_file\n" unless ($output_file =~ m/\.bed$/i && $output_file =~ m/\.gff$/i);
+
+	my $output_format = 'bed';
+	$output_format = $$options{'o'} if defined $$options{'o'};
+
+	die "[ERR]file format: $output_format\n" unless ($output_format eq "bed" || $output_format eq "gff");
+
+	$output_file.=".".$output_format;
 	die "[ERR]file exist: $output_file\n" if -s $output_file;
 
 	my $out_format = 'bed';
@@ -237,12 +242,13 @@ USAGE $0 -t convert [options] input_gtf
 				print $out "$chr\tGTFtool\tgene\t$gstart\t$gend\t.\t$strand\t.\tID=$gid;Name=$gid;\n";
 			}
 
-			print $out "$chr\tGTFtool\ttranscript\t$start\t$end\t.\t$strand\t.\tID=$tid;Name=$tid;parent=$gid;\n";
+			print $out "$chr\tGTFtool\tmRNA\t$start\t$end\t.\t$strand\t.\tID=$tid;Name=$tid;Parent=$gid;\n";
 			for(my $i=0; $i<scalar(@exon)-1; $i=$i+2)
 			{
 				my $e_start = $exon[$i];
 				my $e_end = $exon[$i+1];
-				print $out "$chr\tGTFtool\texon\t$e_start\t$e_end\t.\t$strand\t.\tID=$tid-exon;Name=$tid-exon;\n";
+				my $e_num = ($i/2)+1;
+				print $out "$chr\tGTFtool\tCDS\t$e_start\t$e_end\t.\t$strand\t.\tID=$tid-exon$e_num;Name=$tid-exon$e_num;Parent=$tid;\n";
 			}
 		}
 		else 
