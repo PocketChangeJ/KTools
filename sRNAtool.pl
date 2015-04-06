@@ -26,7 +26,7 @@ if	($options{'t'} eq 'chkadp')	{ chkadp(\%options, \@ARGV);  }
 elsif	($options{'t'} eq 'chkadp2')    { chkadp2(\%options, \@ARGV); }
 elsif	($options{'t'} eq 'rmadp')	{ rmadp(\%options, \@ARGV); }
 elsif	($options{'t'} eq 'composition'){ sRNA_composition(\%options, \@ARGV); }
-elsif	($options{'t'} eq 'convert')	{ srna_convert(\%options); }
+elsif	($options{'t'} eq 'convert')	{ srna_convert(\%options, \@ARGV); }
 elsif	($options{'t'} eq 'lengthd')	{ lengthd(\%options, \@ARGV); }
 elsif	($options{'t'} eq 'unique' )	{ srna_unique(\%options, \@ARGV);  }
 elsif   ($options{'t'} eq 'norm' )	{ norm(\%options);    }
@@ -318,7 +318,7 @@ USAGE: $0 -t sparta -o output_prefix reference sRNA_seq PARE_tab.txt
 	my @r = split(/\n/, $ref_files);
 	die "[ERR]please remove reference files before analysis\n" unless @r == 0;
 
-	my @temp = qw/baseCounts.txt dd_map genome index miRinput_RevComp.fa output PAGe PARE predicted/;
+	my @temp = qw/baseCounts.mem frag.mem dd_map genome index miRinput_RevComp.fa output PAGe PARE/;
 	my $new_head = $sRNA_file."_new_head.fa";
 	push(@temp, $new_head);
 	foreach my $f (@temp) {
@@ -327,7 +327,12 @@ USAGE: $0 -t sparta -o output_prefix reference sRNA_seq PARE_tab.txt
 
 	die "[ERR]ref file format $ref_file\n" unless $ref_file =~ m/\.fasta$/;
 	run_cmd("ln -s $ref_file  reference.fasta");
-	run_cmd("sPARTA.py -featureFile reference.fasta -genomeFeature 0 -miRNAFile $sRNA_file -libs $pare_file -tarPred -tarScore --tag2FASTA --map2DD --validate");
+
+	# set parameters for switch target prediction
+	my $target_prediction = '-tarPred -tarScore';
+	if (-s 'predicted/All.targs.parsed.csv') { $target_prediction = ''; }
+
+	run_cmd("sPARTA.py -featureFile reference.fasta -genomeFeature 0 -miRNAFile $sRNA_file -libs $pare_file $target_prediction --tag2FASTA --map2DD --validate --repeats");
 
 	# check if output file exist
 	my $validate_file = `ls output/*_validated`; chomp($validate_file);
@@ -349,7 +354,9 @@ USAGE: $0 -t sparta -o output_prefix reference sRNA_seq PARE_tab.txt
 
 	# remove temp folder and files
 	foreach my $f (@temp) {
-		run_cmd("rm -rf $f") if -e $f;
+		my $output_dir = $$options{'o'}."_temp";
+		mkdir($output_dir);
+		run_cmd("mv $f $output_dir") if -e $f;
 	}
 
 	run_cmd("rm -rf reference*");
@@ -1046,7 +1053,7 @@ USAGE: $0 chkadp [options] input_file
 =cut
 sub srna_convert
 {
-	my $options = shift;
+	my ($options, $files) = @_;
 
 	my $usage = qq'
 USAGE: $0 -t convert [options]
@@ -1056,8 +1063,7 @@ USAGE: $0 -t convert [options]
 	-f	convert table to fasta (default:0) / fasta to table (1)
 
 ';
-
-	print $usage and exit unless $$options{'i'}; 
+	print $usage and exit unless defined $$options{'i'}; 
 	my $out_prefix = 'sRNAseq';
 	$out_prefix = $$options{'o'} if $$options{'o'};
 

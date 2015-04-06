@@ -28,11 +28,52 @@ getopts('a:b:c:d:e:f:g:i:j:k:l:m:n:o:p:q:r:s:t:u:v:w:x:y:z:h', \%options);
 unless (defined $options{'t'} ) { $options{'t'} = 'align'; } #
 
 if	($options{'t'} eq 'align')	{ align(\%options, \@ARGV); }
+elsif	($options{'t'} eq 'aport')	{ align_aport(\%options, \@ARGV); }
 else	{ usage($version); }
 
 #################################################################
 # kentnf: subroutine						#
 #################################################################
+
+=head2
+ generate report for align
+=cut
+sub align_aport
+{
+	my ($options, $files) = @_;
+
+	my $usage = qq'
+USAGE: $0 bowtie_report > output_report
+ 
+';
+	print $usage and exit unless defined $$files[0];
+
+	print "#sample\ttotal\tmap\tunmap\n";
+	my ($start, $sample_name, $cmd, $total, $align, $failed);
+	my (@a, @b, @c, @d);
+
+	my $fh = IO::File->new($$files[0]) || die $!;
+	while(<$fh>)
+	{
+        	chomp;
+        	#if ($_ =~ m/^Locate/ || $_ =~ m/^Read/) {  $start = 0; next; }
+        	if ( $_ =~ m/bowtie/ )  { $start = 1; }
+        	else { $start = 0; next; }
+
+        	if ($start == 1)
+        	{
+                	$cmd = $_;                   @a = split(/\s+/, $cmd);
+			$sample_name = $a[scalar(@a)-2];
+	                $total = <$fh>;  chomp($total); @b = split(/\s+/, $total);
+        	        $align = <$fh>;  chomp($align); @c = split(/\s+/, $align); 
+	                $failed = <$fh>; chomp($failed);@d = split(/\s+/, $failed);
+        	        <$fh>;
+                	print $sample_name."\t".$b[3]."\t".$c[8]."\t".$d[6]."\n";
+        	}
+	}
+	$fh->close;
+}
+
 =head2
  align -- align read to reference
 =cut
@@ -132,7 +173,7 @@ USAGE: $0 -t align [options] input
 		if ($aligner eq 'bowtie') {
 			$input_files = $r[0];
 			$input_files = "-1 $r[0] -2 $r[1]" if defined $r[1];
-			my $align_cmd = "$aligner $edit_distance $tophit $cpu $format $unmap $mapped -S $reference $input_files $sam";
+			my $align_cmd = "$aligner $edit_distance $tophit $cpu $format $unmap $mapped -S $reference $input_files /dev/null";
 			run_cmd($align_cmd);
 		}
 		else
