@@ -499,6 +499,7 @@ sub rnaseq_align
 	my $usage = qq'
 USAGE: $0 [options] input1.fq input2.fq ...... | input1_r1_fq,input1_r2.fq input2_r1_fq,input2_r2.fq ...
 	
+ -a  [String]	aligner name, tophat or hisat (default: tophat)
  -s  [String]   Sequencing method for read files: (required)
         PE (paired-end);
         SE (single-end);
@@ -521,7 +522,9 @@ USAGE: $0 [options] input1.fq input2.fq ...... | input1_r1_fq,input1_r2.fq input
 	my @index_files = ( 
 		$$options{'d'}.".1.bt2", $$options{'d'}.".2.bt2", 
 		$$options{'d'}.".3.bt2", $$options{'d'}.".4.bt2", 
-		$$options{'d'}.".rev.1.bt2", $$options{'d'}.".rev.2.bt2" 
+		$$options{'d'}.".5.bt2", $$options{'d'}.".6.bt2",
+		$$options{'d'}.".rev.1.bt2", $$options{'d'}.".rev.2.bt2",
+		$$options{'d'}.".rev.5.bt2", $$options{'d'}.".rev.6.bt2" 
 	);
 	my $cpu = 20; $cpu = $$options{'p'} if defined $$options{'p'};
 	my $mismatch = 1; $mismatch = $$options{'n'} if defined $$options{'n'};
@@ -533,13 +536,13 @@ USAGE: $0 [options] input1.fq input2.fq ...... | input1_r1_fq,input1_r2.fq input
 	# set the bin folder to ENV path
 	$ENV{'PATH'} = ${FindBin::RealBin}."/bin".":".$ENV{'PATH'};
 
-	my $tophat_bin;
+	my ($tophat_bin, $hisat_bin) = ('tophat2', 'hisat');
 	if (-s "${FindBin::RealBin}/bin/tophat-2.0.11.Linux_x86_64/tophat2" ) {
         	$tophat_bin = "${FindBin::RealBin}/bin/tophat-2.0.11.Linux_x86_64/tophat2";
-	} else {
-        	$tophat_bin = "tophat2";
-	}
-	print "Topaht2:\n".$tophat_bin."\n";	
+	} 
+	#print "Topaht2:\n".$tophat_bin."\n";
+	my $aligner = 'hisat';
+	$aligner = 'tophat' if (defined $$options{'a'} && $$options{'a'} eq 'tophat');
 	
 	# check input files
 	# key: output_suffix; value: input_file
@@ -549,84 +552,153 @@ USAGE: $0 [options] input1.fq input2.fq ...... | input1_r1_fq,input1_r2.fq input
 		if ($f =~ m/,/) 
 		{
 			my @a = split(/,/, $f);
-			print STDERR "[ERR]file $a[0] or $a[1] not exist\n" and next unless (-s $a[0] && -s $a[1]);
-			push(@input_files, $f);
+			die "[ERR]file $a[0] or $a[1] not exist\n" unless (-s $a[0] && -s $a[1]);
+			my $fm1 = check_seq_format($a[0]);
+			my $fm2 = check_seq_format($a[1]);
+			die "[ERR]file $a[0] and $a[1] have diff format\n" if $fm1 ne $fm2;
+
+			push(@input_files, [$a[0],$a[1],$fm1]);
 		}
 		else
 		{
-			print STDERR "[ERR]file $f not exist\n" and next unless -s $f;
-			push(@input_files, $f);
+			die "[ERR]file $f not exist\n" unless -s $f;
+			my $fm1 = check_seq_format($f);
+			push(@input_files, [$f,'',$fm1]);
 		}
 	}
 	die "[ERR]no input files\n" if (scalar(@input_files) == 0);
 	
 	# main 
 	# 1. create header of report file
-	my $report_tophat = "";
+	my $report_stat = "";
+
 	if ($$options{'s'} =~ m/^S/) {
-		$report_tophat.="#sample\ttotal\tmapped\t%mapped\tmhit\t%mhit\n";
+		$report_stat.="#sample\ttotal\tmapped\t%mapped\tmhit\t%mhit\n";
 	} else {
-		$report_tophat.="#sample\ttotal\tmapped\t%mapped\tmhit\t%mhit";
-		$report_tophat.="\tLeftMap\t%LeftMap\tLeftMhit\t%LeftMhit\tRightMap\t%RightMap\tRightMhit\t%RightMhit\n";
+		$report_stat.="#sample\ttotal\tmapped\t%mapped\tmhit\t%mhit";
+		$report_stat.="\tLeftMap\t%LeftMap\tLeftMhit\t%LeftMhit\tRightMap\t%RightMap\tRightMhit\t%RightMhit\n";
 	}
 
 	# 2. tophat mapping
 	foreach my $f (@input_files) 
 	{
-		my ($input, $output);
-		if ($f =~ m/,/) {
-			my @a = split(/,/, $f);
-			$input = "$a[0] $a[1]";
-			$output = $a[0]."_tophat";
-		} else {
-			$input = $f;
-			$output = $f."_tophat";
-		}
+		my ($r1, $r2, $seq_type) = @$f;
+		my ($input, $output, $format, $library, $report_file);
 
 		# run tophat
-		my $cmd_tophat = "$tophat_bin -o $output --library-type $$options{'l'} -p $cpu --segment-mismatches $mismatch --read-mismatches $mismatch --read-edit-dist $mismatch --read-gap-length $mismatch --max-multihits 20 --segment-length 25 $$options{'d'} $input";
-		run_cmd($cmd_tophat);
+		my $cmd_align = ''; 
+
+		if ($aligner eq 'tophat') 
+		{
+			if ($r2) { $input = "$r1 $r2"; } else { $input = $r1; }
+			$output = $r1."_tophat";
+			$report_file = $output."/align_summary.txt";
+
+			$cmd_align = "$tophat_bin -o $output --library-type $$options{'l'} -p $cpu ";
+			$cmd_align.= "--segment-mismatches $mismatch --read-mismatches $mismatch --read-edit-dist $mismatch --read-gap-length $mismatch ";
+			$cmd_align.= "--max-multihits 20 --segment-length 25 $$options{'d'} $input";
+		} 
+		else 
+		{
+			if ($r2) { $input = "-1 $r1 -2 $r2"; } else { $input = "-U $r1"; }
+			$output = $r1."_hisat";
+
+			if 	($seq_type eq 'fasta') { $format = '-f'; } 
+			elsif	($seq_type eq 'fastq') { $format = '-q'; }
+			else	{ die "[ERR]seq froamt $r1, $r2, $seq_type\n"; }
+
+			if ($$options{'l'} eq 'fr-firststrand') {
+				if ($r2) { $library = 'RF'; } else { $library = "R"; }
+			} elsif ($$options{'l'} eq 'fr-secondstrand') {
+				if ($r2) { $library = 'FR'; } else { $library = "F"; }
+			} else {
+				$library = '';		
+			}
+
+			$report_file = "$output.report.txt";
+
+			if ($library) { $library = "--rna-strandness $library"; }
+			$cmd_align = "$hisat_bin --time -p $cpu --no-unal $library $format ";
+			$cmd_align.= "-k 20 --mp $mismatch,$mismatch --rdg 0,$mismatch --rfg 0,$mismatch --np $mismatch --score-min C,-$mismatch,0 --ignore-quals ";
+			$cmd_align.= "-x $$options{'d'} $input -S $output.sam 1>$report_file 2>&1";
+		}
+
+		# print $cmd_align."\n"; next;
+		run_cmd($cmd_align);
 		
 		# parse report file
-		my $report_tophat_file = $output."/align_summary.txt";
-		my $rinfo = `cat $report_tophat_file`;
-		chomp($rinfo); my @r = split(/\n/, $rinfo);	
-		my ($total, $mapped, $mhit, $lefttotal, $leftmap, $leftmhit, $righttotal, $rightmap, $rightmhit);
-		if ($f =~ m/,/)
-		{
-			if ( $r[1] =~ m/Input\s+:\s+(\d+)/ )	{ $lefttotal	= $1; }
-			if ( $r[2] =~ m/Mapped\s+:\s+(\d+)/ )	{ $leftmap	= $1; }
-			if ( $r[3] =~ m/of these:\s+(\d+)/ )	{ $leftmhit	= $1; }
-			if ( $r[5] =~ m/Input\s+:\s+(\d+)/ )	{ $righttotal	= $1; }
-			if ( $r[6] =~ m/Mapped\s+:\s+(\d+)/ )	{ $rightmap	= $1; }
-			if ( $r[7] =~ m/of these:\s+(\d+)/ )	{ $rightmhit	= $1; }
-			if ( $r[10] =~ m/Aligned pairs:\s+(\d+)/ ) { $mapped = $1; }
-			if ( $r[11] =~ m/of these:\s+(\d+)/ )	{ $mhit 	= $1; }
-			print "[WARN]Left ($lefttotal) is not same as right ($righttotal)\n" if $lefttotal ne $righttotal;
-			$total = $lefttotal;
-			$report_tophat.="$f\t$total\t$mapped\t".sprintf("%.2f", ($mapped/$total)*100);
-			$report_tophat.="\t$mhit\t".sprintf("%.2f", ($mhit/$mapped)*100);
-			$report_tophat.="\t$leftmap\t".sprintf("%.2f", ($leftmap/$lefttotal)*100);
-			$report_tophat.="\t$leftmhit\t".sprintf("%.2f", ($leftmhit/$leftmap)*100);
-			$report_tophat.="\t$rightmap\t".sprintf("%.2f", ($rightmap/$righttotal)*100);
-			$report_tophat.="\t$rightmhit\t".sprintf("%.2f", ($rightmhit/$rightmap)*100)."\n";
-		}
-		else
-		{
-			if ( $r[1] =~ m/Input\s+:\s+(\d+)/ )	{ $total = $1; }
-			if ( $r[2] =~ m/Mapped\s+:\s+(\d+)/ )	{ $mapped = $1;}
-			if ( $r[3] =~ m/of these:\s+(\d+)/ )	{ $mhit = $1; }
-			$report_tophat.="$f\t$total\t$mapped\t".sprintf("%.2f", ($mapped/$total)*100);
-			$report_tophat.="\t$mhit\t".sprintf("%.2f", ($mhit/$mapped)*100)."\n";
-		}
+		my $report_info = parse_align_report_file($report_file, $r1);
+		$report_stat.= $report_info;
 	}
 
 	# output report information to file
-	my $tophat_report_file = "report_tophat.txt";
-	my $out = IO::File->new(">".$tophat_report_file) || die $!;
-	print $out $report_tophat;
+	my $stat_file = "report_ralign_stat.txt";
+	my $out = IO::File->new(">".$stat_file) || die $!;
+	print $out $report_stat;
 	$out->close;
 }
+
+=head2
+ parse_align_report_file: child of rnaseq_align
+=cut
+sub parse_align_report_file 
+{
+	my ($report_file, $f) = @_;
+
+	my $rinfo = `cat $report_file`;
+	chomp($rinfo); my @r = split(/\n/, $rinfo);
+	my $report_info = '';
+
+	my ($total, $mapped, $mhit, $lefttotal, $leftmap, $leftmhit, $righttotal, $rightmap, $rightmhit, $unmap, $single_hit);
+	if ($report_file =~ m/align_summary\.txt/)
+	{
+		if (scalar(@r) > 10)
+                {
+                        if ( $r[1] =~ m/Input\s+:\s+(\d+)/ )    { $lefttotal    = $1; }
+                        if ( $r[2] =~ m/Mapped\s+:\s+(\d+)/ )   { $leftmap      = $1; }
+                        if ( $r[3] =~ m/of these:\s+(\d+)/ )    { $leftmhit     = $1; }
+                        if ( $r[5] =~ m/Input\s+:\s+(\d+)/ )    { $righttotal   = $1; }
+                        if ( $r[6] =~ m/Mapped\s+:\s+(\d+)/ )   { $rightmap     = $1; }
+                        if ( $r[7] =~ m/of these:\s+(\d+)/ )    { $rightmhit    = $1; }
+                        if ( $r[10] =~ m/Aligned pairs:\s+(\d+)/ ) { $mapped = $1; }
+                        if ( $r[11] =~ m/of these:\s+(\d+)/ )   { $mhit         = $1; }
+                        print "[WARN]Left ($lefttotal) is not same as right ($righttotal)\n" if $lefttotal ne $righttotal;
+                        $total = $lefttotal;
+                        $report_info.="$f\t$total\t$mapped\t".sprintf("%.2f", ($mapped/$total)*100);
+                        $report_info.="\t$mhit\t".sprintf("%.2f", ($mhit/$mapped)*100);
+                        $report_info.="\t$leftmap\t".sprintf("%.2f", ($leftmap/$lefttotal)*100);
+                        $report_info.="\t$leftmhit\t".sprintf("%.2f", ($leftmhit/$leftmap)*100);
+                        $report_info.="\t$rightmap\t".sprintf("%.2f", ($rightmap/$righttotal)*100);
+                        $report_info.="\t$rightmhit\t".sprintf("%.2f", ($rightmhit/$rightmap)*100)."\n";
+                }
+                else
+                {
+                        if ( $r[1] =~ m/Input\s+:\s+(\d+)/ )    { $total = $1; }
+                        if ( $r[2] =~ m/Mapped\s+:\s+(\d+)/ )   { $mapped = $1;}
+                        if ( $r[3] =~ m/of these:\s+(\d+)/ )    { $mhit = $1; }
+                        $report_info.="$f\t$total\t$mapped\t".sprintf("%.2f", ($mapped/$total)*100);
+                        $report_info.="\t$mhit\t".sprintf("%.2f", ($mhit/$mapped)*100)."\n";
+                }
+	} 
+	else 
+	{
+
+		foreach my $r (@r) 
+		{
+			if ($r =~ m/(\d+) reads; of these:/) { $total = $1; }
+			if ($r =~ m/(\d+) \(\S+\) aligned 0 times/) { $unmap = $1; }
+			if ($r =~ m/(\d+) \(\S+\) aligned exactly 1 time/) { $single_hit = $1; }
+			if ($r =~ m/(\d+) \(\S+\) aligned >1 times/) { $mhit = $1; }
+		}
+			
+		$mapped = $single_hit + $mhit;
+		$report_info.="$f\t$total\t$mapped\t".sprintf("%.2f", ($mapped/$total)*100);
+		$report_info.="\t$mhit\t".sprintf("%.2f", ($mhit/$mapped)*100)."\n";
+	}
+
+	return $report_info;
+}
+
 
 =head2
  rnaseq_tport: parse tophat report file to generate result
