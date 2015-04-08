@@ -48,7 +48,23 @@ sub pb_correctF
 {
 	my ($options, $files) = @_;
 	my $usage = qq'
-USAGE: $0 -t correctF [options] pb_align.sam illumina_align.bam
+USAGE: $0 -t correctF [options] pb_align.sam illumina_align.sam
+
+	-e	max edit distance ratio (default: 0.2)
+	-d	depth of Illumina junction (default: 1)
+		If set -d to 0, reads will be correct/filter if there none or 
+		partially of junctions were supported by Illumina reads. But, 
+		reads will not be correct/filter if 5bp continouse edit distance 
+		present in the range of junction site.
+
+	-m	max mismatch ratio (default: 0.1)
+	-c	max soft clip length (default: 100)
+	-v	max soft clip coverage (default: 0.1)
+	
+	-k	0. correct mode. (default) 
+
+		1. check mode, only report mapping statistics info
+		do no perform filter/correction
 
 ';
 	print $usage and exit unless defined $$files[0] && defined $$files[1];
@@ -58,35 +74,47 @@ USAGE: $0 -t correctF [options] pb_align.sam illumina_align.bam
 	# set parameters
 	my $sr_junc_depth = 1;		# junction depth for illumina reads	
 	my $juction_flank_len = 5;	# search range of edit distance around junction
+	my $con_junc_ed = 5;            # continous edit distance in junction range
 	my $ed_cutoff = 0.20;		# reads with more than 25% edit distance will be ignore
 	my $mismatch_cutoff = 0.10;	# reads with more than 20% mismatch will be ignore
 	my $clip_cutoff = 100;		# reads with more than 100 soft clip will be ignore
 	my $clip_cov    = 0.1;		# reads with more than 10% soft clip will be ignore
 
+	$sr_junc_depth = $$options{'d'} if (defined $$options{'d'} && $$options{'d'} =~ m/^\d+$/);
+
+	my $mode = 0;
+	$mode = 1 if (defined $$options{'k'} && $$options{'k'} == 1);
+
+	if ($mode == 1) {
+		print "ID\tStrand\tRef\tPos\tLength\tSoftClipLen\tEditDist\tInsertion\tDeletion\tMismatch\n";
+	}
+
 	# load illumina junctions
 	my %sr_junction;
-	my $fh1 = IO::File->new($sr_sam) || die $!;
-	while(<$fh1>)
-	{
-		chomp;
-		next if $_ =~ m/^@/;
-		my @a = split(/\t/, $_);
-		next if $a[1] eq '4';
-		my $apos = $a[3];
-		my $cigar = $a[5];
-		my ($junction, $insertion) = parse_cigar($cigar);
-		next if scalar @$junction == 0;
-		foreach my $j (@$junction) {
-			my $jstart = $apos + $j->[1];
-			my $jend   = $apos + $j->[2];
-			if (defined $sr_junction{$a[2]."#".$jstart."#".$jend} ) {
-				$sr_junction{$a[2]."#".$jstart."#".$jend}++;
-			} else {
-				$sr_junction{$a[2]."#".$jstart."#".$jend} = 1;
+	if ($sr_junc_depth > 0) {
+		my $fh1 = IO::File->new($sr_sam) || die $!;
+		while(<$fh1>)
+		{
+			chomp;
+			next if $_ =~ m/^@/;
+			my @a = split(/\t/, $_);
+			next if $a[1] eq '4';
+			my $apos = $a[3];
+			my $cigar = $a[5];
+			my ($junction, $insertion) = parse_cigar($cigar);
+			next if scalar @$junction == 0;
+			foreach my $j (@$junction) {
+				my $jstart = $apos + $j->[1];
+				my $jend   = $apos + $j->[2];
+				if (defined $sr_junction{$a[2]."#".$jstart."#".$jend} ) {
+					$sr_junction{$a[2]."#".$jstart."#".$jend}++;
+				} else {
+					$sr_junction{$a[2]."#".$jstart."#".$jend} = 1;
+				}
 			}
 		}
+		$fh1->close;
 	}
-	$fh1->close;
 
 	# set output
 	my $pb_correct_seq = '';
@@ -137,13 +165,16 @@ USAGE: $0 -t correctF [options] pb_align.sam illumina_align.bam
 		}
 
 		# report statistics info
-		# print "$a[0]\t$a[1]\t$a[2]\t$apos\t",length($seq),"\t$total_clip\t$ed\t$ins_num\t$del_num\t$mis_num\n";
-		# next;
+		if ($mode == 1) {
+			print "$a[0]\t$a[1]\t$a[2]\t$apos\t",length($seq),"\t$total_clip\t$ed\t$ins_num\t$del_num\t$mis_num\n";
+			next;
+		}
 
 		# find abnormal junction
 		# 1. check if the pb junction support by illumina
 		# 2. check edit distance in in junction
-		my $unsupport_junc = 0;	
+
+		my $unsupport_junc = 0;	# using this method, will report good single exon reads
 
 		foreach my $j (@$junction) 
 		{
@@ -156,10 +187,13 @@ USAGE: $0 -t correctF [options] pb_align.sam illumina_align.bam
 			
 			# check if the pb junction support by illumina 
 			my $junc_key = $a[2]."#".$jstart."#".$jend;
-			if ( defined $sr_junction{$junc_key} ) {
-				$unsupport_junc = 1 if $sr_junction{$junc_key} < $sr_junc_depth;
-			} else {
-				$unsupport_junc = 1;
+			if ($sr_junc_depth > 0) 
+			{
+				if ( defined $sr_junction{$junc_key} ) {
+					$unsupport_junc = 1 if $sr_junction{$junc_key} < $sr_junc_depth;
+				} else {
+					$unsupport_junc = 1;
+				}
 			}
 
 			# check if the pb junction have mismatches
@@ -181,9 +215,9 @@ USAGE: $0 -t correctF [options] pb_align.sam illumina_align.bam
 			foreach my $p_end (sort keys %connect_hash) {
 				my $len = $connect_hash{$p_end};
 				my $p_start = $p_end - $len + 1;
-				if ($p_start < $left_jpos && $p_end > $left_jpos+1 && $len >= 5) {
+				if ($p_start < $left_jpos && $p_end > $left_jpos+1 && $len >= $con_junc_ed) {
 					$unsupport_junc = 1;
-					print "$a[0]\t$left_jpos --- $p_start -- $p_end\t$len\n";
+					#print "$a[0]\t$left_jpos --- $p_start -- $p_end\t$len\n";
 				}
 			}
 		}
@@ -208,6 +242,8 @@ USAGE: $0 -t correctF [options] pb_align.sam illumina_align.bam
 		}
 	}
 	$fh0->close;
+
+	exit if $mode == 1;
 
 	# save output to file for next correction
 	my $out_prefix = $pb_sam; $out_prefix =~ s/\.sam$//;
@@ -501,6 +537,8 @@ USAGE: $0 -t [tool]
 
 	formatCCS	format ccs for next analysis
 	correctF	correct and filter the PB reads
+
+
 ';
 
 	print $usage;
