@@ -152,16 +152,16 @@ USAGE: $0 -t correctF [options] pb_align.sam illumina_align.sam
 		my $seq = $a[9];
 		my $total_clip = $left_clip + $right_clip;
 		$seq = substr($seq, $left_clip, (length($seq) - $total_clip)); # remove soft clip
-		my ($correct_seq, $md_correct) = correct_pb_seq($seq, $insertion, $md);
+		my ($correct_seq, $md_correct, $md_hash) = correct_pb_seq($seq, $insertion, $md);
 
 		# get insertion, deletion, mismatch base num
 		my $ins_num = 0;
 		foreach my $ins (sort keys %$insertion) { $ins_num+=$$insertion{$ins}; }
 
 		my ($del_num, $mis_num) = (0, 0);
-		foreach my $k (sort keys %$md_correct) {
-			if ($$md_correct{$k} =~ m/^\^/) { $del_num+=length($$md_correct{$k})-1; }
-			else { $mis_num+=length($$md_correct{$k}); }
+		foreach my $k (sort keys %$md_hash) {
+			if ($$md_hash{$k} =~ m/^\^/) { $del_num+=length($$md_hash{$k})-1; }
+			else { $mis_num+=length($$md_hash{$k}); }
 		}
 
 		# report statistics info
@@ -427,7 +427,7 @@ sub correct_pb_seq
 
 	# print length($seq),"\n",$temp_seq1,"\n",length($temp_seq1),"\n";
 	# print $temp_seq2,"\n",length($temp_seq2),"\n";
-	return ($temp_seq2, \%md_correct);
+	return ($temp_seq2, \%md_correct, \%md_hash);
 }
 
 sub save_file
