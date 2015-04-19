@@ -87,7 +87,7 @@ USAGE $0 -t pass input_file_R1 [input_file_R2]
 				$out .= <$fh>;
 			}
 
-			if ( $id =~ m/1:N:0:/) {
+			if ( $id =~ m/ 1:N:/) {
 				print $fho $out;
 				$pass++;
 			} 

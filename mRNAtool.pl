@@ -682,14 +682,26 @@ sub parse_align_report_file
 	} 
 	else 
 	{
-
+	    if ($rinfo =~ m/concordantly/) 
+	    {
 		foreach my $r (@r) 
 		{
 			if ($r =~ m/(\d+) reads; of these:/) { $total = $1; }
-			if ($r =~ m/(\d+) \(\S+\) aligned 0 times/) { $unmap = $1; }
-			if ($r =~ m/(\d+) \(\S+\) aligned exactly 1 time/) { $single_hit = $1; }
-			if ($r =~ m/(\d+) \(\S+\) aligned >1 times/) { $mhit = $1; }
+			if ($r =~ m/(\d+) \(\S+\) aligned concordantly 0 times/) { $unmap = $1; }
+			if ($r =~ m/(\d+) \(\S+\) aligned concordantly exactly 1 time/) { $single_hit = $1; }
+			if ($r =~ m/(\d+) \(\S+\) aligned concordantly >1 times/) { $mhit = $1; }
 		}
+	    }
+	    else
+	    {
+		foreach my $r (@r)
+                {
+                        if ($r =~ m/(\d+) reads; of these:/) { $total = $1; }
+                        if ($r =~ m/(\d+) \(\S+\) aligned 0 times/) { $unmap = $1; }
+                        if ($r =~ m/(\d+) \(\S+\) aligned exactly 1 time/) { $single_hit = $1; }
+                        if ($r =~ m/(\d+) \(\S+\) aligned >1 times/) { $mhit = $1; }
+                }
+	    }
 			
 		$mapped = $single_hit + $mhit;
 		$report_info.="$f\t$total\t$mapped\t".sprintf("%.2f", ($mapped/$total)*100);
@@ -698,7 +710,6 @@ sub parse_align_report_file
 
 	return $report_info;
 }
-
 
 =head2
  rnaseq_tport: parse tophat report file to generate result
