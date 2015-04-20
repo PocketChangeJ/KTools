@@ -4,6 +4,7 @@
 
  AStool.pl -- generate AS event result and stat the result
 
+ 20150419: add AS_splice_site_stat.pl to AStool
  20150418: change and combine script to AStool
  20140710: init
 =cut
@@ -13,6 +14,7 @@ use warnings;
 use FindBin;
 use IO::File;
 use Getopt::Std;
+use Bio::SeqIO;
 
 my $version = 0.1;
 my $debug = 0;
@@ -33,7 +35,7 @@ sub as_event_analyze
 	my ($options, $files) = @_;
 
 	my $usage = qq'
-USAGE: $0 -t [options] analyze input_gtf > output_report
+USAGE: $0 -t analyze [options] input_gtf > output_report
 
 ';
 	print $usage and exit unless defined $$files[0];
@@ -239,14 +241,212 @@ sub as_type
 	return @type;
 }
 
+=head1
+ AS_splice_site_stat.pl -- get number of different splice site
+ Yi Zheng
+ 201406:init 
+=cut
+sub as_splice_site
+{
+	my ($options, $files) = @_;
+
+	my $usage = qq'
+USAGE: perl $0 -t spliceSite -g genome_sequence input_gtf 
+	
+';
+	print $usage and exit unless defined $$files[0];
+	my $input_gtf = $$files[0];
+	die "[ERR]file not exist\n" unless -s $input_gtf;
+	
+	print $usage and exit unless defined $$options{'g'};
+	my $genome = $$options{'g'};
+	die "[ERR]file not exist\n" unless -s $genome;
+
+	# put the transcript exon info to hash
+	# key: tid; value: exon1_start exon1_end exon2_start exon2_end ....
+	my %tid_info;
+	my $fh = IO::File->new($input_gtf) || die $!;
+	while(<$fh>)
+	{
+		chomp;
+		next if $_ =~ m/^#/;
+		my @a = split(/\t/, $_);
+		# SL2.40ch00	Cufflinks	exon	3300	3326	.	+	.	gene_id "XLOC_000001"; transcript_id "TCONS_00000001"; exon_number "1"; oId "CUFF.1.1"; class_code "u"; tss_id "TSS1"; lincRNA "1";
+		die "[ERR]col num $_\n" if scalar @a < 9;
+
+		if ($a[2] eq 'exon')
+		{
+			if ($a[8] =~ m/transcript_id "(\S+)"/) 
+			{
+				my $tid = $1;
+				if (defined $tid_info{$tid}{'exon'})
+				{
+					$tid_info{$tid}{exon}.="\t".$a[3]."\t".$a[4];
+				}
+				else
+				{
+					$tid_info{$tid}{exon} = $a[3]."\t".$a[4];
+				}
+
+				if (defined $tid_info{$tid}{'chr'}) 
+				{
+					die "Error, chr for $tid\n" if $tid_info{$tid}{'chr'} ne $a[0];
+				}
+				else
+				{
+					$tid_info{$tid}{'chr'} = $a[0];
+				}
+
+				if (defined $tid_info{$tid}{'strand'})
+				{
+					die "Error, strand for $tid\n" if $tid_info{$tid}{'strand'} ne $a[6];
+				}
+				else
+				{
+					$tid_info{$tid}{'strand'} = $a[6];
+				}
+			}
+			else
+			{
+				die "Error in line $_\n";
+			}
+		}
+	}
+	$fh->close;
+
+	# convert tid exon hash to split site hash, 
+	# key: Chr exon_end 
+	# value: exon start1, ...... 
+	# key: chr exon_end, exon_start
+	# value: strand
+	my %site;
+	my %site_strand;
+
+	foreach my $tid (sort keys %tid_info)
+	{
+		my $chr = $tid_info{$tid}{'chr'};
+		my $strand = $tid_info{$tid}{'strand'};
+		my @exon = split(/\t/, $tid_info{$tid}{'exon'});
+		next if scalar @exon == 2;
+		die "Error in exon num for $tid\n$tid_info{$tid}{'exon'}\n" if scalar @exon % 2 == 1;
+
+		# check the exon order
+		my $pre_exon = $exon[0];
+		for(my $i=1; $i<@exon; $i++) {
+			if ( $exon[$i] < $pre_exon ) {
+				die "Error in exon order for $tid\n$tid_info{$tid}{'exon'}\n";
+			} {
+				$pre_exon = $exon[$i];
+				next;
+			}
+		}
+
+		shift @exon;
+		pop @exon;
+
+		# coreate hash for site
+		for(my $i=0; $i<@exon; $i=$i+2) {
+			my $start = $exon[$i];
+			my $end = $exon[$i+1];
+		
+			if (defined $site_strand{$chr."\t".$start."\t".$end} ) 
+			{
+				if ( $site_strand{$chr."\t".$start."\t".$end} eq $strand ) {
+	
+				} else {
+					#$site{$chr."\t".$start."\t".$end} = ".";
+				}
+				next;
+			}
+			else
+			{
+				$site_strand{$chr."\t".$start."\t".$end} = $strand;
+			}
+
+			if ( defined $site{$chr."\t".$start} )
+			{
+				$site{$chr."\t".$start}.= "\t".$end;
+			}
+			else
+			{
+				$site{$chr."\t".$start}	= $end;
+			}
+		}
+	}
+
+	# get splicing site, then put it to junc_stat hash
+	# key: GT-AG
+	# value: number of this site
+	my %junc_stat;
+
+	my $in = Bio::SeqIO->new(-format=>'fasta', -file=>$genome);
+	while(my $inseq = $in->next_seq)
+	{
+		my $chr = $inseq->id;
+		my $seq = $inseq->seq;
+		my $len = $inseq->length;
+
+		# below start is the exon end
+		# below end is the exon start
+		for(1 .. $len) 
+		{
+			my $start = $_;
+
+			if ( defined $site{$chr."\t".$start} )
+			{
+				my @end = split(/\t/, $site{$chr."\t".$start});
+				foreach my $end (@end) 
+				{
+					my $strand = $site_strand{$chr."\t".$start."\t".$end};
+
+					my $start_base = uc(substr($seq, $start, 2));
+					my $end_base = uc(substr($seq, $end-3, 2));
+
+					my $junction;
+					if ($strand eq "+") 
+					{
+						$junction = $start_base."-".$end_base;
+					}
+					elsif ($strand eq "-") 
+					{
+						$junction = $start_base."-".$end_base;
+						my $rev_junc = reverse($junction);
+						$rev_junc =~ tr/ACGTacgt-/TGCAtgca-/;
+						$junction = $rev_junc;
+					}
+					else
+					{
+						next;
+					}
+
+					if (defined $junc_stat{$junction})
+					{
+						$junc_stat{$junction}++;
+					}
+					else
+					{
+						$junc_stat{$junction} = 1;
+					}
+				}
+			}
+		}
+	}
+
+	# report junc start
+	foreach my $j (sort keys %junc_stat)
+	{
+		print $j."\t".$junc_stat{$j}."\n";
+	}
+}
+
 =head2
  run_cmd : run command
 =cut
 sub run_cmd
 {
-	my ($cmd, $debug) = @_;
-	print "[DEBUG]".$cmd."\n" if $debug;
-	system($cmd) && die "[Error][CMD]$cmd\n";
+        my ($cmd, $debug) = @_;
+        print "[DEBUG]".$cmd."\n" if $debug;
+        system($cmd) && die "[Error][CMD]$cmd\n";
 }
 
 =head2
@@ -254,12 +454,13 @@ sub run_cmd
 =cut
 sub usage
 {
-	my $usage = qq'
+        my $usage = qq'
 USAGE: $0 -t tool 
 
-	analyze		analyze AS events number
-	spliceSite	count the number of splice site
+        analyze         analyze AS events number
+	spsites		count the number of splice site
 
 ';
-	print $usage; exit;
+        print $usage; exit;
 }
+
