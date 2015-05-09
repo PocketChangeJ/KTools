@@ -10,12 +10,12 @@
 #
 # The Author should be Fei or Joung, modified by Yi
 # 
-# 20150423 add some parameters 
+# 20150423 reconstruct the program  
 # 20150330 make it could analyze multiple files simultaneously
 # ==========================================================================
 
-#use strict;
-#use warnings;
+use strict;
+use warnings;
 use Bio::SeqIO;
 use FindBin;
 
@@ -30,10 +30,10 @@ my $BLAST_BIN = ${FindBin::RealBin}."/blastall";
 # 	- In case of small RNAs, please make format database files 
 #         with their reverse complement
 
-$DATA_PATH = "./";
+our $DATA_PATH = "./";
 
 # The path for temorary file
-$TEMP_PATH = "temp_$ARGV[0]";
+our $TEMP_PATH = "temp_$ARGV[0]";
 system ("mkdir $TEMP_PATH");
 
 # Default cutoff of target score ( score range: 0 < score < 10 )
@@ -56,98 +56,54 @@ my @sel_list_pos_sRNA_end = ();
 my @sel_list_direction = ();
 my @description_list = ();
 
-$blastdb_smRNA = "";	#  small RNA DB
-$blastdb_mRNA = "";	#  mRNA DB / unigene DB 
+our $blastdb_smRNA = "";	#  small RNA DB
+our $blastdb_mRNA = "";	#  mRNA DB / unigene DB 
 
-$mRNA_fas = "";		#  mRNA sequence file / unigene sequence file
-$smRNA_fas = "";	#  small RNA sequence file
+our $mRNA_fas = "";	#  mRNA sequence file / unigene sequence file
+our $smRNA_fas = "";	#  small RNA sequence file
 
 # Temorary file for blast input 
-$tempb = $TEMP_PATH."/"."blast.tmp";
-
+our $tempb = $TEMP_PATH."/"."blast.tmp";
 
 =head1 insert_seq
-
  put fasta sequence to hash. 
  key: seqID ; value: sequence
-
 =cut
 sub insert_seq ($) {
 	my $fn = $_[0];
 	print $fn."\n";
-	open(INFILE, $fn) or die("Failed to read in $fn");
 
-	my $seq_hash = {};
-	my $seq = "";
-	my $description;
-
-	$count = 1;
-	while($line = <INFILE>) {
-		if ($line =~ m/^\>/) {
-			if ($count > 1) { 
-				$seq_hash{$description} = $seq;	
-				$seq = "";	
-			}
-			$description = split_discription($line);
-			chomp $description;
-		}
-		else {
-			chomp  $line;
-			$seq .=  $line;
-		}
-		$count++;
+	my %seq_hash;
+	my $in = Bio::SeqIO->new(-format=>'fasta', -file=>$fn);
+	while(my $inseq = $in->next_seq)
+	{
+		my $sid = $inseq->id;
+		my $seq = $inseq->seq;
+		$seq_hash{$sid} = $seq;
 	}
-	close(INFILE);
-	
-	$seq_hash{$description} = $seq;
 	return %seq_hash;
 }
 
 =head1 query_seq_from_file
-
  put fasta sequence to hash, 
  key: seqID ; value: sequence 
-
 =cut
 sub query_seq_from_file ($) {
 	my $fn = $_[0];
-	open(INFILE, $fn) or die("Failed to read in $fn");
-
-	my $qseq_hash = {};
-	my $seq = "";
-	my $description;
-
-	$count = 1;
-	while($line = <INFILE>) {
-		if ($line =~ m/^\>/) {
-			if ($count > 1) { 
-				$qseq_hash{$description} = $seq;	
-				push @description_list, $description;
-				$seq = "";	
-			}
-			$description = split_discription($line);
-			chomp $description;
-		}
-		else {
-			chomp  $line;
-			$seq .=  $line;
-		}
-		$count++;
-	}
-	close(INFILE);
-
-	chomp($description);
-	$seq =~ tr/atcg/ATCG/;
 	
-	$qseq_hash{$description} = $seq;
-	push @description_list, $description;
-	return (%qseq_hash);
+	my %qseq_hash;
+	my $in = Bio::SeqIO->new(-format=>'fasta', -file=>$fn);
+	while(my $inseq = $in->next_seq) {
+		my $sid = $inseq->id;
+		my $seq = $inseq->seq;
+		$seq = uc($seq);
+		$qseq_hash{$sid} = $seq;
+	}
+        return %qseq_hash;
 }
 
 =head1 reverse_complement
-
  function: get the reverse complement sequence
-
 =cut
 sub reverse_complement {
 	my $seq = shift;
@@ -159,9 +115,7 @@ sub reverse_complement {
 }
 
 =head1 lsa (Local Sequence Alignment)
-
  perform local sequence alignment base on sw-algorithm
-
 =cut
 sub lsa {
 	my ($adisc, $bdisc, $mRseq, $smRseq, $pos, $direction) = @_;
@@ -262,8 +216,8 @@ sub lsa {
 
 	if ( $max_score > $max_score_cutoff ) {
 
-		$i = $last_i; 
-		$j = $last_j;
+		my $i = $last_i; 
+		my $j = $last_j;
 
 		# Trace the backtracking matrix.
 		while( $i > 0 and $j > 0 ) {
@@ -354,7 +308,7 @@ sub lsa {
 		if ( $sc <= $sc_cutoff ) { $answer = 1; }
 	}
 
-	@seqinfo = ($answer, $sc, $mc, $start+$first_i+1, $first_j+1, $seqa, $seqb, $bind, $adisc, $bdisc, $direction, $wc, $ic);
+	my @seqinfo = ($answer, $sc, $mc, $start+$first_i+1, $first_j+1, $seqa, $seqb, $bind, $adisc, $bdisc, $direction, $wc, $ic);
 	return @seqinfo;
 }
 
@@ -507,8 +461,13 @@ sub blast (@) {
 	my $db = "";
 	my $forward = 1;
 	my $reverse = 2;
-	$pos_direction = "+"; 
-	$neg_direction = "-"; 
+	my $pos_direction = "+"; 
+	my $neg_direction = "-"; 
+
+	my ($rv, $result, $name);
+	my @list;
+	my @entry;
+	my @f;
 
 	if ( $is_mRNA eq 1 ) { 
 		$db = $blastdb_smRNA;
@@ -588,12 +547,12 @@ sub blast (@) {
 }
 
 sub print_tab {
-	my $schash, %resulthash =  @_;
+	my ($schash, $resulthash) =  @_;
 
 	my $summary = "";
 	my $i = 1;
-	foreach $value (sort {$schash{$a} <=> $schash{$b}} keys %schash) {
-		my ($istarget, $sc, $mc, $sa, $sb, $seqa, $seqb, $bind, $adisc, $bdisc, $direction, $wc, $ic) = @{$resulthash{$value}};
+	foreach my $value (sort {$$schash{$a} <=> $$schash{$b}} keys %$schash) {
+		my ($istarget, $sc, $mc, $sa, $sb, $seqa, $seqb, $bind, $adisc, $bdisc, $direction, $wc, $ic) = @{$$resulthash{$value}};
 		my  $lp = get_last_pos($sa, $seqa);
 
 		$bdisc =~ s/^\>//;
@@ -666,34 +625,39 @@ sub filter_output_result
 	return $result_tab_filtered;
 }
 
-=head1 run_target_score
 
+run_target_score(\%options, \@ARGV);	# predict the sRNA target using Fei's pipeline
+
+=head1 run_target_score
 
 =cut
 sub run_target_score
 {
+	my ($options, $files) = @_;
 
-	my $USAGE = qq'
-Usage: perl $0 miRNA_seq_fasta blast_formatted_db source_db output
+	my $usage = qq'
+USAGE: $0 miRNA_seq_fasta blast_formatted_db source_db output
 
 * miRNA_seq_fasta -- miRNA sequence file identified by miRNA_prediction.pl
 * blast_formatted_db -- mRNA DB formatted by blast 
 * source_db -- mRNA sequence file
 * output -- output result (filtered)
+
 ';
-	
-	if ($#ARGV < 3) { # one argument input
-		print $USAGE;
-    		exit;
+	print $usage and exit if @$files < 2;
+
+	foreach my $f (@$files) {
+		die "[ERR]file not exist: $f\n" unless -s $f;
 	}
-	
-	my $out_file = $ARGV[3];
-	open OUTFILE, ">$out_file" || die "Cannot Open File $!";
-	close OUTFILE;
-		
-	my $source_file = "";
-	my $source_file_name = $ARGV[2];
-	my $db_name = $ARGV[1];
+
+	my $query_file  = $$files[0];
+	my $target_file = $$files[1];	
+	my $out_file 	= $query_file.".target.txt";
+	die "[ERR]output file exist\n" if -s $out_file;
+
+	#open OUTFILE, ">$out_file" || die "Cannot Open File $!";
+	#close OUTFILE;
+	#my $db_name = $ARGV[1];
 	
 	if ($seq_type eq 1) 
 	{ 
@@ -706,8 +670,6 @@ Usage: perl $0 miRNA_seq_fasta blast_formatted_db source_db output
 		$source_file = $source_file_name;
 		$blastdb_mRNA = $db_name;  #  Tomato unigene file
 	}
-
-	my %seqsa = insert_seq($source_file);
 	
 	my $direction = "+";
 	my $search_direction = "both";
@@ -715,6 +677,9 @@ Usage: perl $0 miRNA_seq_fasta blast_formatted_db source_db output
 	if ($choice_direction eq "forward") { $search_direction = "forward"; }
 	elsif ($choice_direction eq "reverse") { $search_direction = "reverse"; }	
 
+
+	# load sRNA (query) and mRNA (target) to hash
+	my %seqsa = insert_seq($target_file);
 	my %seq_querys = query_seq_from_file($ARGV[0]);
 	
 	my $seq_num = 1;
@@ -723,6 +688,8 @@ Usage: perl $0 miRNA_seq_fasta blast_formatted_db source_db output
 	my $schash = {};
 	my @index_list = ();
 
+
+	# perform analysis by seq order ? 
 	foreach my $description (@description_list) {
 		
 		my $query_n = $description;
@@ -732,7 +699,8 @@ Usage: perl $0 miRNA_seq_fasta blast_formatted_db source_db output
 		my $result_tab = "";
 		
 		my @seqb = ($description, $seq_querys{$description});
-	
+
+		# do not analysis sRNA more than 30bp, do not analysis mRNA less than 30bp	
 		if ( (length($seqb[1]) <= 30) and ($seq_type eq 1) ) { print "\nPlease check the query sequence type!";  exit; }
 		if ( (length($seqb[1]) > 30) and ($seq_type eq 0) ) { print "\nPlease check the query sequence type!";  next; }
 
@@ -751,6 +719,9 @@ Usage: perl $0 miRNA_seq_fasta blast_formatted_db source_db output
 		my $count = blast($seqb[0], $seqb[1], $tempb, $seq_type, $search_direction);
 
 		my $i = 0;
+
+		my %resulthash;
+		my %schash;
 
 		foreach my $disc (@sel_list_disc) {
 
@@ -783,7 +754,7 @@ Usage: perl $0 miRNA_seq_fasta blast_formatted_db source_db output
 			$i++;
 		}
 
-		$result_tab = print_tab(%schash, %resulthash);
+		$result_tab = print_tab(\%schash, \%resulthash);
 
 		#################################################
 		# filter the result tab info			#
@@ -807,4 +778,4 @@ Usage: perl $0 miRNA_seq_fasta blast_formatted_db source_db output
 	}
 }
 
-run_target_score;
+

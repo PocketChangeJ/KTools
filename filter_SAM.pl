@@ -43,7 +43,7 @@ GetOptions(
 	"o=s"	=> \$sam_file_out,
 	
 	"e"	=> \$add_byexp,
-	"l=i"	=> \$filter_byreadlength,
+	"l=s"	=> \$filter_byreadlength,
 	"m=i"	=> \$filter_multihits,
 	"n"	=> \$filter_unalignedread,
 	"v=s"	=> \$filter_editDistanceCutoff,
@@ -76,7 +76,7 @@ foreach my $type (@types) {
 
 if (defined $filter_editDistanceCutoff && $filter_editDistanceCutoff >= 0 && $filter_editDistanceCutoff <= 3) { $type_num++; }
 if ($type_num != 1) { die "Error in number of filter type $usage\n"; }
-if (defined $filter_byreadlength && $filter_byreadlength < 15 )  { die $usage; }
+#if (defined $filter_byreadlength && $filter_byreadlength < 15 )  { die $usage; }
 if (defined $filter_multihits && $filter_multihits < 1)  { die $usage; }
 
 #################################################################
@@ -178,6 +178,17 @@ sub filter_ByReadLength
 {
 	my ($sam_file_in, $sam_file_out, $read_length) = @_;
 	
+	my ($single_len, $start_len, $end_len);	
+	if ($read_length =~ m/-/) {
+		my @a = split(/-/, $read_length);
+		die "[ERR]fitler read length parameter: $read_length\n" unless @a == 2;
+		die "[ERR]fitler read length parameter: $read_length\n" if $a[0] >= $a[1];
+		$start_len = $a[0];
+		$end_len = $a[1];
+	} else {
+		$single_len = $read_length;
+	}
+	
 	my $out = IO::File->new(">".$sam_file_out) || die "Can not open output sam file $!\n";
 	my $in = IO::File->new($sam_file_in) || die "Can not open input sam file $!\n";
 
@@ -188,7 +199,14 @@ sub filter_ByReadLength
 		{
 			chomp;
 			my @a = split(/\t/, $_);
-			if ( length($a[9]) >= 21 && length($a[9]) <=24 ){ print $out $_."\n"; }
+			#if ( length($a[9]) >= 21 && length($a[9]) <=24 ){ print $out $_."\n"; }
+			if (defined $single_len) {
+				if ( length($a[9]) == $single_len ) { print $out $_."\n"; }
+			} elsif (defined $start_len && defined $end_len) {
+				if ( length($a[9])>=$start_len && length($a[9])<=$end_len) { print $out $_."\n"; }	
+			} else {
+				die "[ERR]fitler read length\n";
+			}
 		}
 	}
 

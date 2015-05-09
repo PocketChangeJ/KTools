@@ -27,7 +27,7 @@ elsif	($options{'t'} eq 'chkadp2')    { chkadp2(\%options, \@ARGV); }
 elsif	($options{'t'} eq 'rmadp')	{ rmadp(\%options, \@ARGV); }
 elsif	($options{'t'} eq 'composition'){ sRNA_composition(\%options, \@ARGV); }
 elsif	($options{'t'} eq 'convert')	{ srna_convert(\%options, \@ARGV); }
-elsif	($options{'t'} eq 'lengthd')	{ lengthd(\%options, \@ARGV); }
+elsif	($options{'t'} eq 'lengthd')	{ srna_lengthd(\%options, \@ARGV); }
 elsif	($options{'t'} eq 'unique' )	{ srna_unique(\%options, \@ARGV);  }
 elsif   ($options{'t'} eq 'norm' )	{ norm(\%options);    }
 elsif   ($options{'t'} eq 'normcut')	{ normcut(\%options); }
@@ -1276,9 +1276,9 @@ USAGE: $0 unique [options] input_reads input_reads ... input_reads
 }
 
 =head2
- lengthd -- get length distribution of sRNA 
+ srna_lengthd -- get length distribution of sRNA 
 =cut
-sub lengthd
+sub srna_lengthd
 {
 	my ($options, $files) = @_;
 	
@@ -1307,7 +1307,13 @@ USAGE: $0 -t lengthd [options] input_file1 input_file2
 		my $seq_num = 0;
 		my ($seq_id_info, $seq_id, $seq_desc, $format, $sequence, $seq_length, $uniq_count);
 	
-		my $fh = IO::File->new($input_seq) || die $!;
+		my $fh;
+		if ($input_seq =~ m/\.gz$/) {
+			open($fh, '-|', "gzip -cd $input_seq") || die $!;
+		} else {
+			open($fh, $input_seq) || die $!;
+		}
+
 		while(<$fh>)
 		{
 			chomp;

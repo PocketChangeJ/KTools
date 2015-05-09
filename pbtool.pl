@@ -166,7 +166,9 @@ USAGE: $0 -t correctF [options] pb_align.sam illumina_align.sam
 
 		# report statistics info
 		if ($mode == 1) {
-			print "$a[0]\t$a[1]\t$a[2]\t$apos\t",length($seq),"\t$total_clip\t$ed\t$ins_num\t$del_num\t$mis_num\n";
+			unless ($cigar =~ m/H/) {
+				print "$a[0]\t$a[1]\t$a[2]\t$apos\t",length($seq),"\t$total_clip\t$ed\t$ins_num\t$del_num\t$mis_num\n";
+			}
 			next;
 		}
 
@@ -535,9 +537,9 @@ sub usage
 	my $usage = qq'
 USAGE: $0 -t [tool]
 
+	align		show align command used for pb reads
 	formatCCS	format ccs for next analysis
 	correctF	correct and filter the PB reads
-
 
 ';
 

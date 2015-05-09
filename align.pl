@@ -89,8 +89,10 @@ USAGE: $0 -t align [options] input
 	-o output_prefix
 	-a number of CPU (default = 24)
 
-	-u generate unmapped (only for bowtie)
-	-m generate mapped (only for bowtie)
+	-u generate unmapped (1 or undef, only for bowtie)
+	-m generate mapped (1 or undef, only for bowtie)
+	-s output_sam (1 or undef, only for bowtie)
+
 	-n edit_distance for bwa / mismatch for bowtie (default = 3) 
 	-k good alignments per read (default = 1)
 	-b report all/10000 hits for bowtie bwa
@@ -127,6 +129,9 @@ USAGE: $0 -t align [options] input
 
 	my $tophit = 1;
 	$tophit = $$options{'k'} if (defined $$options{'k'} && $$options{'k'} > 0);
+
+	my $output_sam;
+	$output_sam = 1 if (defined $$options{'s'} && $$options{'s'} == 1);
 
 	# re-generate parameters according to aligner
 	if ($aligner eq 'bowtie') {
@@ -173,7 +178,8 @@ USAGE: $0 -t align [options] input
 		if ($aligner eq 'bowtie') {
 			$input_files = $r[0];
 			$input_files = "-1 $r[0] -2 $r[1]" if defined $r[1];
-			my $align_cmd = "$aligner $edit_distance $tophit $cpu $format $unmap $mapped -S $reference $input_files /dev/null";
+			$sam = "/dev/null" unless $output_sam == 1;
+			my $align_cmd = "$aligner $edit_distance $tophit $cpu $format $unmap $mapped -S $reference $input_files $sam";
 			run_cmd($align_cmd);
 		}
 		else
