@@ -66,6 +66,8 @@ USAGE: $0 -t correctF [options] pb_align.sam illumina_align.sam
 		1. check mode, only report mapping statistics info
 		do no perform filter/correction
 
+		2. only report soft clip reads
+
 ';
 	print $usage and exit unless defined $$files[0] && defined $$files[1];
 	my $pb_sam = $$files[0];
@@ -84,6 +86,7 @@ USAGE: $0 -t correctF [options] pb_align.sam illumina_align.sam
 
 	my $mode = 0;
 	$mode = 1 if (defined $$options{'k'} && $$options{'k'} == 1);
+	$mode = 2 if (defined $$options{'k'} && $$options{'k'} == 2);
 
 	if ($mode == 1) {
 		print "ID\tStrand\tRef\tPos\tLength\tSoftClipLen\tEditDist\tInsertion\tDeletion\tMismatch\n";
@@ -171,6 +174,23 @@ USAGE: $0 -t correctF [options] pb_align.sam illumina_align.sam
 			}
 			next;
 		}
+
+		# report softclip reads
+		if ($mode == 2) {
+			unless ($cigar =~ m/H/) {
+				my $left_soft_seq  = substr($a[9], 0, $left_clip);
+				my $right_soft_seq = substr($a[9], -$right_clip);
+
+				if ($left_clip > 0) {
+					print ">$a[0]-leftSC-$left_clip\n$left_soft_seq\n";
+				}
+				if ($right_clip > 0) {
+					print ">$a[0]-rightSC-$right_clip\n$right_soft_seq\n";
+				}
+			}
+			next;
+		}
+
 
 		# find abnormal junction
 		# 1. check if the pb junction support by illumina
