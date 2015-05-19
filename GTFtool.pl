@@ -17,11 +17,95 @@ if      ($options{'t'} eq 'stats')	{ gtf_stats(\%options, \@ARGV); }
 elsif   ($options{'t'} eq 'convert')	{ gtf_convert(\%options, \@ARGV); }
 elsif	($options{'t'} eq 'extract')	{ gtf_extract(\%options, \@ARGV); }
 elsif	($options{'t'} eq 'gffread')    { gtf_gffread(); }
+elsif   ($options{'t'} eq 'togpd')    	{ gtf_to_gpd(\%options, \@ARGV); }
 else    { usage($version); }
 
 #################################################################
 # kentnf: subroutine						#
 #################################################################
+
+=head2
+  gtf_to_gpd -- convert gtf to gpd
+=cut
+sub gtf_to_gpd
+{
+	my ($options, $files) = @_;
+
+	my $usage = qq'
+USAGE: $0 -t togpd -i [gpd/gtf] input_file > ouput_file
+
+example1 $0 -t togpd -i gpd gpd > gtf
+example1 $0 -t togpd -i gtf gtf > gpd
+
+';
+	print $usage and exit unless defined $$files[0];
+	my $input_file = $$files[0];
+	die "[ERR]file not exist\n" unless -s $input_file;
+
+	print $usage and exit unless defined $$options{'i'};
+	
+	if ($$options{'i'} eq 'gtf') 
+	{
+		my %trans_info = parse_gtf($input_file);
+		foreach my $tid (sort keys %trans_info)
+		{
+			my $chr		= $trans_info{$tid}{'chr'};
+			my $gid		= $trans_info{$tid}{'gid'};
+			my $strand 	= $trans_info{$tid}{'strand'};
+			my @exon	= split("\t",$trans_info{$tid}{'exon'});
+			@exon = sort {$a<=>$b} @exon;
+			die "[ERR]exon num\n" unless ((scalar @exon) % 2 == 0);
+			my $exon_num = (scalar @exon) / 2;
+
+			my @cds;
+			if (defined $trans_info{$tid}{'cds'}) {
+				@cds = split("\t",$trans_info{$tid}{'cds'});
+			} else {
+				@cds = @exon; 
+			}
+
+			my $start_e = $exon[0];
+			my $end_e = $exon[scalar(@exon)-1];
+			my $start_c = $cds[0];
+			my $end_c = $cds[scalar(@cds)-1];
+			my $exon_start = '';
+			my $exon_end = '';
+
+			for(my $i=0; $i<@exon; $i=$i+2)
+			{
+				$exon_start.=$exon[$i].",";
+				$exon_end.=$exon[$i+1].",";
+			}
+
+			print "$gid\t$tid\t$chr\t$strand\t$start_e\t$end_e\t$start_c\t$end_c\t$exon_num\t$exon_start\t$exon_end\n";
+		}
+	} 
+	elsif ($$options{'i'} eq 'gpd')
+	{
+		my $fh = IO::File->new($input_file) || die $!;
+		while(<$fh>)
+		{
+			chomp;
+			next if $_ =~ m/^#/;
+			my @a = split(/\t/, $_);
+			die "[ERR]col num: $_\n" if (scalar @a < 11);
+			my ($gid, $tid, $chr, $strand, $e_start, $e_end) = ($a[0], $a[1], $a[2], $a[3], $a[9], $a[10]);
+			my @m = split(/,/, $e_start);
+			my @n = split(/,/, $e_end);
+			die "[ERR]exon num\n" unless (scalar(@m) == scalar(@n));
+			print "$chr\tGPD\ttranscript\t$a[4]\t$a[5]\t.\t$strand\t.\tgene_id \"$gid\"; transcript_id \"$tid\";\n";
+			for(my $i=0; $i<@m; $i++)
+			{
+				print "$chr\tGPD\texon\t$m[$i]\t$n[$i]\t.\t$strand\t.\tgene_id \"$gid\"; transcript_id \"$tid\";\n";
+			}	
+		}
+		$fh->close;
+	}
+	else
+	{
+		die "[ERR]parameter i $$options{'i'}\n";
+	}
+}
 
 =head2
  gtf_extract -- extract gtf information by ID;
@@ -356,6 +440,7 @@ Command:
         convert		convert GTF to BED/GFF format
 	extract		extract GTF by list
 	gffread		usage of gffread
+	togpd		convert GTF to GPD format
 
 * the gtf file must have exon feature, transcript_id, and gene_id attributes
 
