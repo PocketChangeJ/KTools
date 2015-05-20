@@ -365,6 +365,7 @@ sub parse_gtf
 			my %attr_value;
 			my @b = split(/; /, $a[8]); 
 			foreach my $b (@b) {
+				$b =~ s/;$//;
 				my @c = split(/ /, $b);
 				die "[ERR]attr $b in $a[8]\n" unless @c == 2;
 				$c[1] =~ s/"//ig;

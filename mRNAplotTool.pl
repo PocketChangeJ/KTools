@@ -42,25 +42,36 @@ while(<FH>)
         else
         {
                 # HWI-ST397:445:C56GJACXX:1:2316:19064:100583     0       Csa6M242200.1   757     255     101M    *       0       0       CGGATGCTGGGGAATAGTGTG
-		my $pos = $a[3];
-		$pos = $a[3] + length($a[9]) - 1 if $a[1] == 16;
-		my $pos_norm = int(($pos / $seq_len{$a[2]}) * 100 );
-		$max_pos = $pos_norm if $pos_norm > $max_pos;
 
-		print $_."\n" if $pos_norm > 100;
+		if ($a[1] == 16 || $a[1] == 0 || $a[1] == 163 || $a[1] == 99)
+		{
+			my $pos = $a[3];
+			die "[ERR] frg len $a[8]\n" if $a[8] < 0;
+			$pos = $a[3] + length($a[9]) - 1 if $a[1] == 16;
+			$pos = $a[3] + int($a[8]/2) if ($a[1] == 163 || $a[1] == 99);
 
-		if ($a[1] == 16) {
-                        if ( defined $dist_anti{$pos_norm} ) {
-                                $dist_anti{$pos_norm}++;
-                        } else {
-                                $dist_anti{$pos_norm} = 1;
-                        }
-                } else {
-			if ( defined $dist_sens{$pos_norm} ) {
-				$dist_sens{$pos_norm}++;
-			} else {
-				$dist_sens{$pos_norm} = 1;
+			my $pos_norm = int(($pos / $seq_len{$a[2]}) * 100 );
+			$max_pos = $pos_norm if $pos_norm > $max_pos;
+
+			print $_."\n" if $pos_norm > 100;
+
+			if ($a[1] == 16 || $a[1] == 163) {
+	                        if ( defined $dist_anti{$pos_norm} ) {
+	                                $dist_anti{$pos_norm}++;
+	                        } else {
+	                                $dist_anti{$pos_norm} = 1;
+	                        }
+	                } else {
+				if ( defined $dist_sens{$pos_norm} ) {
+					$dist_sens{$pos_norm}++;
+				} else {
+					$dist_sens{$pos_norm} = 1;
+				}
 			}
+		}
+		else
+		{
+			next;
 		}
         }
 }
