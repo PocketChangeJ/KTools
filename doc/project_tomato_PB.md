@@ -150,6 +150,15 @@ Run LSC
 $ /path/to/runLSC.py run.cfg
 ```
 
+Correct Test with different Short-reads coverage depth (SCD).
+This test only for changed SCD to -1 at mode 2. In the mode 1,
+the SCD is still 5
+
+SCD -1 for MG: SeqNum:271826; MaxLen: 43582; MinLen: 154; AvgLen: 3470.17; TotalBase: 943283641
+SCD 5 for MG:  SeqNum:271826; MaxLen: 43582; MinLen: 155; AvgLen: 3470.56; TotalBase: 943389079  
+
+>These two results are almost same, so the SCD will not work after mapping of mode 1
+
 Corrected result
 - LSC correct 273343 reads using short-reads
 - 9312 reads were not corrected by LSC
@@ -258,19 +267,46 @@ For raw CSS correction
 compared 149999 alignment before correction, another 5.7% reads mapped after correction by PBcR, the 
 correction is not better than LSC.
 
-Foe LSC correction
+For LSC correction
 - There are 167612 alignments
   - 156970 reads aligned one position of reference
   - 5321 reads aligned two position of reference, all of them have hard clip
 compared 149999 alignment before correction, another 11.7% reads mapped after correction by LSC & PBcR
 
+##5 correct using lordec
+
+```
+lordec-correct -2 HZ-4-B_TCGAAG_paired_R1.fq,HZ-4-B_TCGAAG_paired_R2.fq -k 19 -s 3 -i Heinz_B_SMRT_CCS_draft.fasta -o B_CCS_Lord_K19.fasta
+```
+
+Try to use different kmer for correction
+Kmer	15	17	19	21	23
+Single	145600	156208	159623	158092	156091
+Double	2510	3445	4242	4377	4310
+
+> the K=19 will generate best result
+
+Try to use different solid threshold for correction
+solid_threshold		2	3	4	5
+Single			159221	159623	159736	159653
+Double			4261	4242	4211	4261
+> it seems the s=4 will genearate better result
+
+Try to use different order for correction (Correct LSC and PBcR result)
+(K=19, s=3)
+method	Raw	LSC	PBcR	LSC+PBcR
+Single	159623	161634	159419
+Double	4242	5389	4835
+
+
 ##5 filter by pbtool
-
-
 
 ##6 isoform detection using IDP
 
 ##7 lncRNA analysis
 
 ##8 AS events
+
+
+
 

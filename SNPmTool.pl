@@ -59,9 +59,23 @@ sub snp_effect
 	my $usage = qq'
 USAGE: $0 -t effect [options] -c cds.fa -g gtf_file -i snp_file 
 
-	-f 	feature type (CDS/exon)
-	-b	border length of exon
-	-r	flank length of gene
+	-f 	feature type (CDS/exon) [default:CDS]
+	-b	border length of exon	[default:2]
+	-r	flank length of gene	[default:500]
+	-a	annotation file for Gene[options]
+
+Category
+#       1. gene region : 1.1 up stream 500bp 1.2 down stream 500bp 1.3 gene region; 
+#       2. intron region : 2.1 intron/exon border (2bp of exon border) 2.2 intron region;
+#       3. coding region : 
+#               3.1 start codon -> non-start codon
+#               3.2 stop codon -> non-stop codon
+#               3.3 Nonsynonymous substitution
+#               3.4 non-stop codon -> stop codon
+#               3.5 synonymous substitution 
+#               3.6 stop codon -> stop codon (synonymous substitution) 
+#               3.7 start codon -> start codon (synonymous substitution) 
+#               3.8 undetermined with N in CDS
 
 ';
 	print $usage and exit unless (defined $$options{'c'} && defined $$options{'g'} && defined $$options{'i'});
@@ -75,9 +89,12 @@ USAGE: $0 -t effect [options] -c cds.fa -g gtf_file -i snp_file
 	$border = $$options{'b'} if (defined $$options{'b'} && $$options{'b'} > 0);
 	$flank = $$options{'r'} if (defined $$options{'r'} && $$options{'r'} > 0);
 
+	my $annotation = '';
+	$annotation = "-anno $$options{'a'}" if (defined $$options{'a'} && -s $$options{'a'});
+
 	my $effect_bin = "$FindBin::RealBin/bin/SNPmao/SNP_effect_2pileSNP.pl";
 	die "[ERR]script not exist $effect_bin\n" unless -s $effect_bin;
-	run_cmd("perl $effect_bin -flank $flank -border $border -feature $feature -cds $$options{'c'} -gtf $$options{'g'} -snp $$options{'i'} ");
+	run_cmd("perl $effect_bin -flank $flank -border $border -feature $feature -cds $$options{'c'} -gtf $$options{'g'} -snp $$options{'i'} $annotation ");
 }
 
 =head2
@@ -471,7 +488,7 @@ USAGE: $0 -t filter1 input_file output_file
 		$cov1 = $a[5] - $count1;
 		$cov2 = $a[7] - $count2;
 
-		$a[1] =~ s/;//;
+		#$a[1] =~ s/;//;
 	
 		$a[6] = repace_pileup($a[6]);
 		$a[8] = repace_pileup($a[8]);

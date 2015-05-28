@@ -32,11 +32,13 @@ USAGE: $0 [options] -cds input_CDS.fasta -gtf input.GTF -snp input_SNP_table.txt
 	-flank		flanking length of gene (upstream and downstream) (default:500)
 	-border		length of exon border (default: 2bp)
 	-feature	feature used for annotation (exon/CDS, default:CDS)
+	-anno		function annotation 
+
 * only accept GTF files
 
 ';
 
-my ($cds_file, $gtf_file, $snp_file, $flank, $border, $feature);
+my ($cds_file, $gtf_file, $snp_file, , $anno_file, $flank, $border, $feature);
 ($flank, $border, $feature) = (500, 2, "CDS");
 GetOptions (
 	"flank=i" => \$flank,
@@ -44,6 +46,7 @@ GetOptions (
 	"feature=s" => \$feature,
 	"cds=s" => \$cds_file,	# CDS sequence
 	"gtf=s" => \$gtf_file,	# GTF file
+	"anno=s" => \$anno_file,# annotation file
 	"snp=s" => \$snp_file	# SNP file
 );
 
@@ -65,6 +68,19 @@ my %codon;
 		$codon{$bbb} = [$setag, $aa[$i]]; 
 	}
 }
+
+# load annotation information 
+# key: gene or trans id
+# value: function annotation
+my %id_anno;
+my $fha = IO::File->new($anno_file) || die $!;
+while(<$fha>)
+{
+	chomp;
+	my @a = split(/\t/, $_);
+	$id_anno{$a[0]}	= $a[1];
+}
+$fha->close;
 
 # load CDS sequence to hash
 my %cds_seq;
@@ -148,6 +164,7 @@ while (<FH>) {
 	my $refbase = undef(); 
 	my $newbase = undef(); 
 	my @td; # Storing the effections. 
+	my %te; # Storing the annotaions.
 	if ($ta[0] eq 'type') {
 		print STDOUT join("\t", $_, 'Tag')."\n"; 
 		next SNP_LINE; 
@@ -156,8 +173,12 @@ while (<FH>) {
 		$refbase = $1; $newbase = $2; 
 		$refbase = uc($refbase); $newbase = uc($newbase); 
 		(defined $newbase and $newbase =~ /^[ATGC]$/) or die "Wrong Base:[$newbase]\n$_\n"; 
-		my @tc = &parseSNP('', $anno{$chr_id}, $chr_pos, $newbase, $refbase); 
+		my @tc = parseSNP('', $anno{$chr_id}, $chr_pos, $newbase, $refbase); 
 		for my $tcr (@tc) {
+			my $sid = $$tcr[0];
+			if (defined $id_anno{$sid}) {
+				$te{$sid} = $id_anno{$sid};
+			}
 			push(@td, join(":", @$tcr)); 
 		}
 	} elsif ($ta[0] eq 'D') {
@@ -170,8 +191,12 @@ while (<FH>) {
 		$refbase = $1; $newbase = $2; 
 		$refbase = uc($refbase); $newbase = uc($newbase); 
 		(defined $newbase and $newbase =~ /^[ATGC]$/) or die "Wrong Base:[$newbase]\n$_\n"; 
-		my @tc = &parseSNP('', $anno{$chr_id}, $chr_pos, $newbase, $refbase); 
+		my @tc = parseSNP('', $anno{$chr_id}, $chr_pos, $newbase, $refbase); 
 		for my $tcr (@tc) {
+			my $sid = $$tcr[0];
+			if (defined $id_anno{$sid}) {
+				$te{$sid} = $id_anno{$sid};
+			}
 			push(@td, join(":", @$tcr)); 
 		}
 		$td[-1] .= ";$td1"; 
@@ -179,7 +204,13 @@ while (<FH>) {
 		warn "Unknown type [$ta[0]]\n"; 
 		push(@td, $ta[0]); 
 	}
-	print join("\t", $_, join(",", @td) ) . "\n"; 
+
+	my $tea = '';
+	foreach my $sid  (sort keys %te) {
+		$tea.="\t$sid:$te{$sid}";
+	}
+
+	print join("\t", $_, join(",", @td) ) . "$tea\n"; 
 }
 
 # my ($cdsseqR, $gffR, $position, $newbase, $refbase) = @_; 
