@@ -617,9 +617,12 @@ USAGE: $0 [options] input1.fq input2.fq ...... | input1_r1_fq,input1_r2.fq input
 
 			$report_file = "$output.report.txt";
 
+			my $penalty = 1;
+			my $score_min = $penalty * $mismatch;
+
 			if ($library) { $library = "--rna-strandness $library"; }
 			$cmd_align = "$hisat_bin --time -p $cpu --no-unal $library $format ";
-			$cmd_align.= "-k 20 --mp $mismatch,$mismatch --rdg 0,$mismatch --rfg 0,$mismatch --np $mismatch --score-min C,-$mismatch,0 --ignore-quals ";
+			$cmd_align.= "-k 20 --mp $penalty,$penalty --rdg 0,$penalty --rfg 0,$penalty --np $penalty --score-min C,-$score_min,0 --ignore-quals ";
 			$cmd_align.= "-x $$options{'d'} $input -S $output.sam 1>$report_file 2>&1";
 		}
 
