@@ -295,18 +295,71 @@ Double			4261	4242	4211	4261
 Try to use different order for correction (Correct LSC and PBcR result)
 (K=19, s=3)
 method	Raw	LSC	PBcR	LSC+PBcR
-Single	159623	161634	159419
-Double	4242	5389	4835
+Single	159623	161634	159419	161007
+Double	4242	5389	4835	6179
+
+##5 Should I use All Illumina reads to correct PB reads
+
+There are three replicates for sample B sequenced by Illumina. All of them
+are strand-specific reads 
+- Heinz_B_rep1_paired (B01), 4bp PE reads, 10859261 cleaned read pairs
+- HZ-4-B_TCGAAG_paired (B02), 151bp PE reads, 30267228 cleaned read pairs
+- Heinz_B_rep2 (B03), 48bp SE reads, 10777050 cleaned reads
+
+###5.1 Using Kmer method
+
+This method is quite simple. Generate 17mer for reads of each sample, then
+compare the 17mer to figure the coverage among these samples.
+
+- B01 has  66064418 17mer 
+- B02 has 186305234 17mer 
+- B03 has  32533278 17mer
+- B02 could cover 81.12% (53589601) of B01 with 1 depth
+- B02 could cover 82.45% (26826589) of B03 with 1 depth
+- B01 could cover 66.45% (21621260) of B03 with 1 depth
+- B02 could cover 98.36% (37027284/37643718) of B01 with 2 depth
+- B02 could cover 98.19% (18100749/18434211) of B03 with 2 depth
+- B01 could cover 90.90% (16756720/18434211) of B03 with 2 depth 
+With solid = 2, B02 could cover B01 and B02 well. 
+
+###5.2 correlation analysis
+
+Align B01 and B02 to genome using tophat with perfect match, and align B03
+allowing 1 edit distance. Then count reads in gene region. 
+
+>Sample  B02       B01     B03
+>B02       1      0.98    0.97
+>B01    0.98         1    0.99
+>B03    0.97      0.99       1
+
+###5.3 junctions identified by tophat
+
+convert junction bed to tab delimit format: bedt_to_juncs < junctions.bed > B01.junc,
+then compare then using venn diagram
+
+> B01, 79854 junction; B02, 118858 junction; B03 65923 junction
+> They shared 57752 junctions, 
+> B02 has 35886 specific junctions, 19803 shared with B01, 5637 shared with B03 
+> B01 has 2214 specific junctions, accounting for 1.86% of 118858 in B02 
+> B03 has 2449 specific junctions, accounting for 1.89% of 118858 in B02
+> B01 and B03 has 285 (0.24%) specific junction compared to B02, 
+
+Use only B02 will lose some result, but it is fine for just lose < 2% of junction
+And this lose rate is same kmer analysis
+
+###5.4 lordec method
+
+corrected raw CCS using B02, B02+B01, B02+B01+B03
 
 
-##5 filter by pbtool
 
-##6 isoform detection using IDP
+##6 filter by pbtool
 
-##7 lncRNA analysis
+Gene statistics information 
+
+##7 isoform detection using IDP
+
+##8 lncRNA analysis
 
 ##8 AS events
-
-
-
 

@@ -6,7 +6,7 @@ use IO::File;
 use Bio::SeqIO;
 use Getopt::Std;
 
-=head basic information
+=head1 basic information
  Description of PB CCS
  1. the CCS reads will be named as "reads_of_insert"
  2. the CCS shorter than 300bp, and chimeric CSS will be discard, 
@@ -19,7 +19,6 @@ use Getopt::Std;
 	5p end AAGCAGTGGTATCAACGCAGAGTACATGGG
 	3p end GTACTCTGCGTTGATACCACTGCTT
 	the 5p and 3p are same, and could be used for get strand
-
 =cut
 
 my %options;
@@ -35,8 +34,7 @@ else	{ usage(); }
 # kentnf: subroutine						#
 #################################################################
 
-=head2
- pb_correct Filter -- filter PB aligned reads that do not need correct
+=head1 pb_correctF -- filter PB aligned reads
  1. filter out pb reads that does not need correction
 	1.1 do not have any edit distance in best align
 	1.2 with edit distance, but no presented in splicing site range
@@ -48,18 +46,32 @@ sub pb_correctF
 {
 	my ($options, $files) = @_;
 	my $usage = qq'
-USAGE: $0 -t correctF [options] pb_align.sam illumina_align.sam
+USAGE: $0 -t correctF [options] pb_align.sam
 
-	-e	max edit distance ratio (default: 0.2)
+* Before correction, below info need to be investigated
+- min length of intron 
+- max length of intron
+- splice site frequency
+
+Filter for ERR rate
+	-e	max percentage of error		(default: 0.3)
+
+Filter for junction filter
+	-i	illumina reads alignment, SAM format
+	-c	tophat aligned junctions, junction format converted using bed_to_junc
 	-d	depth of Illumina junction (default: 1)
-		If set -d to 0, reads will be correct/filter if there none or 
-		partially of junctions were supported by Illumina reads. But, 
-		reads will not be correct/filter if 5bp continouse edit distance 
-		present in the range of junction site.
+		[If set -d to 0, reads will be correct/filter if there none or
+		 partially of junctions were supported by Illumina reads. But,
+		 reads will not be correct/filter if 5bp continouse edit distance
+		 present in the range of junction site.]
 
-	-m	max mismatch ratio (default: 0.1)
-	-c	max soft clip length (default: 100)
-	-v	max soft clip coverage (default: 0.1)
+
+	-g	genome annotation, GTF format 	(required)
+	-r	reference, fasta format		(required)
+		[the reference must index by samtools]
+	-a	min length of intron		(default: 40)
+	-b	max length of intron		(default: 10000)
+	-s	splice site 			(default: GT-AG,GC-AG) 
 	
 	-k	0. correct mode. (default) 
 
@@ -68,20 +80,52 @@ USAGE: $0 -t correctF [options] pb_align.sam illumina_align.sam
 
 		2. only report soft clip reads
 
+		report the statiscis of errors in junction site
+
 ';
-	print $usage and exit unless defined $$files[0] && defined $$files[1];
-	my $pb_sam = $$files[0];
-	my $sr_sam = $$files[1];
+	# parse required files
+	my ($pb_sam, $gtf_file, $reference, $out_prefix);
+	if (defined $$files[0] && defined $$options{'g'} && defined $$options{'r'} ) { 
+		$pb_sam    = $$files[0]; 
+		die "[ERR] input file suffix $pb_sam\n" unless $pb_sam =~ m/\.sam$/;
+		$out_prefix = $pb_sam; 
+		$out_prefix =~ s/\.sam$//;
+		$gtf_file  = $$options{'g'};
+		$reference = $$options{'r'};
+		check_file($pb_sam, $gtf_file, $reference);
+	}else { 
+		print $usage; exit;
+	}
 
 	# set parameters
-	my $sr_junc_depth = 1;		# junction depth for illumina reads	
-	my $juction_flank_len = 5;	# search range of edit distance around junction
-	my $con_junc_ed = 5;            # continous edit distance in junction range
-	my $ed_cutoff = 0.20;		# reads with more than 25% edit distance will be ignore
-	my $mismatch_cutoff = 0.10;	# reads with more than 20% mismatch will be ignore
-	my $clip_cutoff = 100;		# reads with more than 100 soft clip will be ignore
-	my $clip_cov    = 0.1;		# reads with more than 10% soft clip will be ignore
+	my $ed_cutoff = 0.30;           # reads with more than 25% edit distance will be ignore
+	$ed_cutoff = $$options{'e'} if (defined $$options{'e'} && $$options{'e'} >= 0);
 
+	my ($min_intron, $max_intron) = (40, 10000);
+	my %conserved_splice = (
+		'GT-AG' => 1,
+		'CT-AC' => 1,
+		'GC-AG' => 1,
+		'CT-GC' => 1
+	);
+
+	$min_intron = $$options{'e'} if (defined $$options{'a'} && $$options{'a'} >= 0);
+	$max_intron = $$options{'b'} if (defined $$options{'b'} && $$options{'b'} >= $min_intron);
+	if (defined $$options{'s'})
+	{
+		my @cs = split(/,/, $$options{'s'});
+		foreach my $cs (@cs) {
+			$conserved_splice{$cs} = 1;
+			my $rcs = reverse $cs;
+			$rcs = tr/ATCGNatcgn-/TAGCNtagcn-/;
+			$conserved_splice{$rcs} = 1;
+		}
+	}
+
+	my ($sr_sam, $sr_align_junc) = ('', '');
+	$sr_sam 	= $$options{'i'} if defined $$options{'i'};
+	$sr_align_junc 	= $$options{'c'} if defined $$options{'c'};
+	my $sr_junc_depth = 1;          # junction depth for illumina reads
 	$sr_junc_depth = $$options{'d'} if (defined $$options{'d'} && $$options{'d'} =~ m/^\d+$/);
 
 	my $mode = 0;
@@ -92,9 +136,18 @@ USAGE: $0 -t correctF [options] pb_align.sam illumina_align.sam
 		print "ID\tStrand\tRef\tPos\tLength\tSoftClipLen\tEditDist\tInsertion\tDeletion\tMismatch\n";
 	}
 
-	# load illumina junctions
+	#########################################################
+	# parameters pre defined				#
+	#########################################################
+	my $juction_flank_len = 2;      # search range of edit distance (ERR) around junction
+	my $con_junc_ed = 5;            # cutoff for continous ERR 
+
+	#########################################################
+	# load junctions					#
+	#########################################################
+	# load illumina junctions by reads or by alignment software
 	my %sr_junction;
-	if ($sr_junc_depth > 0) {
+	if (-s $sr_sam) {
 		my $fh1 = IO::File->new($sr_sam) || die $!;
 		while(<$fh1>)
 		{
@@ -117,34 +170,91 @@ USAGE: $0 -t correctF [options] pb_align.sam illumina_align.sam
 			}
 		}
 		$fh1->close;
-	}
+	} 
 
-	# set output
-	my $pb_correct_seq = '';
-	my $pb_raw_seq = '';
-	my $pb_correct_sam = '';
+	if (-s $sr_align_junc) {
+
+
+	}
+	#print scalar(keys(%sr_junction)), " of junctions has been loaded from short read mapping\n"; #exit;
+
+	# load junctions from gene annotation file
+	my %gtf_junction;
+	my %trans_info = parse_gtf($gtf_file);
+
+		foreach my $tid (sort keys %trans_info) {
+			my $chr = $trans_info{$tid}{'chr'};
+			my @exon = split("\t", $trans_info{$tid}{'exon'});
+			@exon = sort {$a<=>$b} @exon;
+			next if @exon == 2;
+			die "[ERR]exon num $tid\n" unless (scalar(@exon) % 2 == 0);
+			shift @exon; pop @exon;
+			for(my $i=0; $i<@exon; $i=$i+2) {
+				my $jstart = $exon[$i]+1;
+				my $jend = $exon[$i+1]-1;
+				$gtf_junction{$chr."#".$jstart."#".$jend} = 1;
+			}
+		}
+	#print scalar(keys(%gtf_junction)), " of junctions has been loaded from $$options{'g'}\n"; #exit;
+
+	# store junction attribute information to hash
+	# key1: read id
+	# key2: RSEQ, raw read sequence
+	#	CSEQ, correct read sequence
+	#	SOFT, array of soft clip in end [left, right]
+	#	HARD, array of hard clip in end [left, right]
+	#	EDIT, edit distance
+	#	JUNC, array of junctions
+	# 	STR,  mapping strand 0 or 16
+	#	CHR,  chr name 
+	my %rid_attr;
+
+	# store junction attribute information to hash
+	# key1 : junction_key, 
+	# key2 : PBS, PacBio Supported coverage
+	#	 GTF, iTAG supported stat
+	#	 SRS, illumina short reads converage
+	#	 SPL, splicing base GT-AG
+	#	 ERR, ERR count
+	#	 CON, connected ERR count  
+	#	 MAP: array of transcript ID:strand, separated by ","
+	my %junc_attr;
+
+	my ($count_hard_clip, $count_single_align) = (0, 0);
 
 	# parse the pb sam file
-	my ($ed, $md, $nm);
+	my ($ed, $md, $nm); # init var for edit distance (NM), MD
 	my $fh0 = IO::File->new($pb_sam) || die $!;
 	while(<$fh0>)
 	{
 		chomp;
-		if ($_ =~ m/^@/) { $pb_correct_sam.=$_."\n"; next; }
+		next if $_ =~ m/^@/;
 		my @a = split(/\t/, $_);
 		next if $a[1] eq '4';
 		my $cigar = $a[5];
+		
+		# skip hard clip for it has two alignment in reads 
+		$count_hard_clip++ and next if $cigar =~ m/H/;	
+		$count_single_align++;
+		
+		# get ed md for compute edit distance, (mismatch and indel)
 		if ($_ =~ m/NM:i:(\d+)/) { $ed = $1; } else { die "[ERR]in NM $_\n"; }
 		if ($_ =~ m/MD:Z:(\S+)/) { $md = $1; } else { die "[ERR]in MD $_\n"; }
 
 		# get reads align start point
-		my $apos = $a[3];	# start of align positon
+		my $apos = $a[3];	
+
+		# get soft clip
 		my ($left_clip, $right_clip) = (0, 0);
 		if ($cigar =~ m/^(\d+)S/) { $left_clip  = $1; }
 		if ($cigar =~ m/(\d+)S$/) { $right_clip = $1; }
 
 		# get junction, and insertion into array  
-		# junction : 
+		# junction : array of junctions for each reads
+		#	     member format: [ Left,Jstart,Jend ]
+		#      | <- left junction base, 1 base
+                # ++++++---------++++++
+                #       |       | <- Jstart and Jend
 		# insertion:
 		my ($junction, $insertion) = parse_cigar($cigar);
 
@@ -167,115 +277,282 @@ USAGE: $0 -t correctF [options] pb_align.sam illumina_align.sam
 			else { $mis_num+=length($$md_hash{$k}); }
 		}
 
-		# report statistics info
+		# report statistics info for infer the cutoff for quality control
 		if ($mode == 1) {
-			unless ($cigar =~ m/H/) {
-				print "$a[0]\t$a[1]\t$a[2]\t$apos\t",length($seq),"\t$total_clip\t$ed\t$ins_num\t$del_num\t$mis_num\n";
-			}
+			print "$a[0]\t$a[1]\t$a[2]\t$apos\t",length($seq),"\t$total_clip\t$ed\t$ins_num\t$del_num\t$mis_num\n";
 			next;
 		}
 
-		# report softclip reads
-		if ($mode == 2) {
-			unless ($cigar =~ m/H/) {
-				my $left_soft_seq  = substr($a[9], 0, $left_clip);
-				my $right_soft_seq = substr($a[9], -$right_clip);
-
-				if ($left_clip > 0) {
-					print ">$a[0]-leftSC-$left_clip\n$left_soft_seq\n";
-				}
-				if ($right_clip > 0) {
-					print ">$a[0]-rightSC-$right_clip\n$right_soft_seq\n";
-				}
-			}
-			next;
-		}
-
-
-		# find abnormal junction
-		# 1. check if the pb junction support by illumina
-		# 2. check edit distance in in junction
-
-		my $unsupport_junc = 0;	# using this method, will report good single exon reads
-
+		# put the juction information to hash
+		my @abs_junction;
 		foreach my $j (@$junction) 
 		{
 			#      | <- left junction base, 1 base
 			# ++++++---------++++++
+			#       |       | <- Jstart and Jend
 			my $left_jpos = $j->[0];
 			my $jstart = $apos + $j->[1];
-			my $jend   = $apos + $j->[2];	
-			# print "$left_jpos\t$jstart\t$jend\n";
+			my $jend   = $apos + $j->[2];
+			push(@abs_junction, [$jstart, $jend]);
+			#print "$left_jpos\t$apos\t$jstart\t$jend\n"; exit;
 			
 			# check if the pb junction support by illumina 
 			my $junc_key = $a[2]."#".$jstart."#".$jend;
-			if ($sr_junc_depth > 0) 
+
+			#my $sr_support_stat = 0;
+			#if ( $sr_junc_depth > 0 && defined $sr_junction{$junc_key} ) {
+			#	$sr_support_stat = 1 if $sr_junction{$junc_key} >= $sr_junc_depth;
+			#} 
+
+			# check if the pb juction supported by annotation
+			#my $gtf_support_stat = 0;
+			#if (defined $gtf_junction{$junc_key}) {
+			#	$gtf_support_stat = 1;
+			#} 
+
+			# generate attribute for junctions
+			if (defined $junc_attr{$junc_key}{'PBS'})
 			{
-				if ( defined $sr_junction{$junc_key} ) {
-					$unsupport_junc = 1 if $sr_junction{$junc_key} < $sr_junc_depth;
-				} else {
-					$unsupport_junc = 1;
-				}
+				$junc_attr{$junc_key}{'PBS'}++;
+				$junc_attr{$junc_key}{'MAP'}.=",$a[0]:$a[1]";
 			}
+			else
+			{
+				# init ERR count
+				$junc_attr{$junc_key}{'ERR'} = 0; # errors in window
+				$junc_attr{$junc_key}{'CON'} = 0; # connect erros in window
+
+				# get support information
+				$junc_attr{$junc_key}{'PBS'} = 1; # coverage for junction supported by PB reads (PacBio Support)
+				$junc_attr{$junc_key}{'GTF'} = 0;
+				$junc_attr{$junc_key}{'SRS'} = 0;
+				$junc_attr{$junc_key}{'GTF'} = 1 if defined $gtf_junction{$junc_key}; 
+				$junc_attr{$junc_key}{'SRS'} = $sr_junction{$junc_key} if defined $sr_junction{$junc_key};
+			
+				# get basic information	
+				$junc_attr{$junc_key}{'MAP'} = "$a[0]:$a[1]";
+				my $intron_len = $jend-$jstart+1;
+				$junc_attr{$junc_key}{'LEN'} = $intron_len;
+			} 
 
 			# check if the pb junction have mismatches
 			my $connect_error = 0;
-			my %connect_hash = ();
+			my %connect_hash = (); # key, err_start_pos, value, error length
 			my $p;
+			my $err_pos = 0;
+			my $err_stat = 0;
 			for($p=$left_jpos-$juction_flank_len+1; $p<=$left_jpos+$juction_flank_len; $p++) 
 			{
+				$err_pos++;
+				next if $p < 1;
 				if (defined $$md_correct{$p}) {
+					$err_stat = 1;
 					$connect_error++;
 					#print $a[0]."\t".$jstart."-".$jend."\t".$left_jpos."-".$p."-".$$md_correct{$p}."\n"; # mismatch error arround junction
 				} else {
-					$connect_hash{$p-1} = $connect_error if $connect_error > 0;
+					$connect_hash{$err_pos-1} = $connect_error if $connect_error > 0;
 					$connect_error = 0;
 				}
 			}
-			$connect_hash{$p-1} = $connect_error if $connect_error > 0;
+			$connect_hash{$err_pos-1} = $connect_error if $connect_error > 0;
+
+			if ($err_stat == 1) {
+				$junc_attr{$junc_key}{'ERR'}++;
+			}
+
+			# count the connected errors
+			my $conn_filter_length_cutoff = 2;
+			my $conn_filter_stat = 0;
 
 			foreach my $p_end (sort keys %connect_hash) {
 				my $len = $connect_hash{$p_end};
 				my $p_start = $p_end - $len + 1;
-				if ($p_start < $left_jpos && $p_end > $left_jpos+1 && $len >= $con_junc_ed) {
-					$unsupport_junc = 1;
-					#print "$a[0]\t$left_jpos --- $p_start -- $p_end\t$len\n";
-				}
+				# check if the continous error cover the junction site
+				if ($p_start < $left_jpos && $p_end > $left_jpos+1 && $len >= $conn_filter_length_cutoff) {
+					$conn_filter_stat = 1;
+				} 
 			}
+
+			if ($conn_filter_stat == 1) {
+                                $junc_attr{$junc_key}{'CON'}++;
+                        }
 		}
 
-		# rc correct_seq according to strand
+		# rc correct_seq according to strand, it's necessary 
 		$correct_seq = reverse_comp($correct_seq) if $a[1] == 16;
 		my $raw_seq = $a[9]; $raw_seq = reverse_comp($a[9]) if $a[1] == 16;
 
-		# === output result ===
-		# Rule1:  
-		# remove soft clip, hard clip read
-		# remove reads according to edit distance, and number of mismatch
-		# remove reads that not all junction supported by illumina
-		if ($total_clip > $clip_cutoff || ($total_clip/length($correct_seq)) > $clip_cov || 
-		    ($ed/length($correct_seq)) > $ed_cutoff || ($mis_num/length($correct_seq)) > $mismatch_cutoff || 
-		    $cigar =~ m/H/ || $unsupport_junc == 1) 
-		{
-			$pb_raw_seq.= ">$a[0] $a[2]:$apos\n$raw_seq\n";
-		} else {	
-			$pb_correct_seq.= ">$a[0] $a[2]:$apos:$left_clip:$right_clip\n$correct_seq\n";
-			$pb_correct_sam.=$_."\n";
+		# get soft clip sequences
+		my $left_soft_seq  = substr($a[9], 0, $left_clip);
+                my $right_soft_seq = substr($a[9], -$right_clip);
+
+		# save into to %rid_attr
+		$rid_attr{$a[0]}{'CHR'}  = $a[2];
+		$rid_attr{$a[0]}{'STR'}  = $a[1];
+		$rid_attr{$a[0]}{'CSEQ'} = $correct_seq;
+		$rid_attr{$a[0]}{'SOFT'} = [$left_clip, $left_soft_seq, $right_clip, $right_soft_seq];
+		$rid_attr{$a[0]}{'EDIT'} = [$ed, $ins_num, $del_num, $mis_num];
+		$rid_attr{$a[0]}{'JUNC'} = \@abs_junction;	
+
+		# print to screen how many alignment has been processed (used for speed test)
+		my $line_num = $.;
+		if ($line_num % 1000 == 0) {
+			my $t = $line_num / 1000;
+			my $time = localtime();
+			warn "[$time] $t x 1000 alignment finished\n";
 		}
 	}
 	$fh0->close;
+	#########################################################
+	# end of parse PB reads alignment (SAM) file		#
+	#########################################################
 
-	exit if $mode == 1;
+	$count_hard_clip = $count_hard_clip / 2;
+	print "No. of single align: $count_single_align\n";
+	print "No. of hard-clip: $count_hard_clip\n";
+	print "No. of Read Attr: ", scalar(keys(%rid_attr)),"\n";
+	print "No. of GTF Junction: ",scalar(keys(%gtf_junction)),"\n";
+	print "No. of Short Read Junction: ",scalar(keys(%sr_junction)),"\n";
+	print "No. of PB Read Junction: ",scalar(keys(%junc_attr)),"\n";
+
+	# get splicing site for each junction
+	retrive_splice_site($reference, \%junc_attr);
+
+	# summary and report junction status
+	if ($mode == 0) {
+		my $report_junction_file = $out_prefix."_junc_report.txt";
+		my $rjf = IO::File->new(">".$report_junction_file) || die $!;
+		print $rjf "#Junction\tSPL\tLEN\tGTF\tPBS\tSRS\tERR\tCONER\tMAP\n";
+		foreach my $jk (sort keys %junc_attr) {
+			print $rjf $jk,"\t",$junc_attr{$jk}{'SPL'}
+				,"\t",$junc_attr{$jk}{'LEN'},"\t",$junc_attr{$jk}{'GTF'},"\t",$junc_attr{$jk}{'PBS'}
+				,"\t",$junc_attr{$jk}{'SRS'},"\t",$junc_attr{$jk}{'ERR'},"\t",$junc_attr{$jk}{'CON'},"\t",$junc_attr{$jk}{'MAP'},"\n";
+		}
+		$rjf->close;
+	}
+
+	# filter out corrected sequence file
+	# PB reads filter	
+	# Before filter, please combine the PB reads (stageB and MG), SR junctions(stageB and MG)	
+	# A. remove all reads with hard clip (will perform fusion gene analysis in the further)	
+	# B. remove all soft clip part, rename the reads ID for soft clip	
+	#	example: B1k43249R101P-L200R300
+	#	L: soft clip of 200bp from left
+	#	R: soft clip of 300bp from right 
+	#	output the clipped sequence for virus-mRNA analysis in the further
+	# C. remove reads less than 300bp after soft clipping 	
+	# D. For junctions	
+	#	1. keep the junctions supported by GTF, illumina short Reads
+	#	2. keep the junctions supported by more than 2 PB reads supported
+	#	3. for single PB read supported junctions, keep the junction with conserved splicing site (GT-AG, GC-AG)
+	#	4. for single PB reads supported unconsrved junctions, keep the juncsion without Errors in 4 base window
+	#	from step2, remove juctions with longer or shorter intron length (junction not conserved with GTF)
+	# E. filter reads with more Edit distance (>30% of aligned region)	
+	# set output var
+        my $pb_correct_seq = '';
+	my $pb_softclip_seq = '';
+	my $pb_filter_out_rpt1 = "RID\tLeftClip\tRightClip\tRealLength\tEdit\tINS\tDEL\tMIS\t%EDIT\n";
+	my $pb_filter_out_rpt2 = "RID\tLeftClip\tRightClip\tRealLength\tEdit\tINS\tDEL\tMIS\t%EDIT\n";
+	#my $pb_filter_out_rpt2 = "RID\tCHR\tSTR\tStart\tEnd\tLen\tPBS\tGTF\tSRS\tSplice\tERR\n";
+
+	my ($count_short, $count_err_junc, $count_high_err, $count_low_err) = (0,0,0,0);
+	foreach my $rid (sort keys %rid_attr) {
+		my $correct_seq = $rid_attr{$rid}{'CSEQ'};
+		my $correct_len = length($correct_seq);
+		$count_short++ and next if length($correct_seq) < 300;
+		
+		my $soft = $rid_attr{$rid}{'SOFT'};
+		my $edit = $rid_attr{$rid}{'EDIT'};
+		my $junc = $rid_attr{$rid}{'JUNC'};	
+		my $chr  = $rid_attr{$rid}{'CHR'};
+		my $str  = $rid_attr{$rid}{'STR'};
+		
+		my $edit_four = join("\t", @$edit);
+                my $edit_rate = sprintf("%.2f", (($edit->[0]/$correct_len)*100));
+
+		my $with_err_junc = 0;
+		my $junc_desc = '';
+		foreach my $j (@$junc) {
+			my $jstart = $j->[0];
+			my $jend = $j->[1];
+			my $jk = $chr."#".$jstart."#".$jend;
+			die "[ERR]junction is not exist $jk\n" unless defined $junc_attr{$jk}{'PBS'};	
+			my $length = $junc_attr{$jk}{'LEN'};
+			my $pbs_ct = $junc_attr{$jk}{'PBS'};
+			my $gtf_ct = $junc_attr{$jk}{'GTF'};
+			my $srs_ct = $junc_attr{$jk}{'SRS'};
+			my $splice = $junc_attr{$jk}{'SPL'};
+			my $err_ct = $junc_attr{$jk}{'ERR'};
+	
+			$junc_desc.="$rid\t$chr\t$str\t$jstart\t$jend\t$length\t$pbs_ct\t$gtf_ct\t$srs_ct\t$splice\t$err_ct\n";
+
+			if ($length >= $min_intron && $length <= $max_intron)
+			{
+				next if defined $conserved_splice{$splice};
+				next if $gtf_ct == 1;
+				next if $srs_ct >= $sr_junc_depth;
+				next if $err_ct == 0;
+				next if $pbs_ct > 1;
+				next if ($pbs_ct == 1 && $edit_rate <=10);
+			}
+			else
+			{
+				next if $gtf_ct == 1;
+				if ($pbs_ct > 1 && $srs_ct > 5 && defined $conserved_splice{$splice} && $err_ct == 0) {
+					next;
+				}
+			}
+
+			$with_err_junc = 1;
+		}
+
+		# reconstruct new transcript ID
+		my $left_clip  = $soft->[0];
+		my $left_seq   = $soft->[1];
+		my $right_clip = $soft->[2];
+		my $right_seq  = $soft->[3];
+		
+		$pb_softclip_seq.=">$rid-$str-L$left_clip\n$left_seq\n" if $left_clip > 30;
+		$pb_softclip_seq.=">$rid-$str-R$right_clip\n$right_seq\n" if $right_clip > 30;
+		
+		my $new_id = $rid;
+		if ($left_clip > 0 || $right_clip > 0) {
+			$new_id.= "-".$str."L$left_clip"."R$right_clip";
+		}
+
+		if ($with_err_junc == 0) {
+			if ($edit_rate <= 25)
+			{
+				$count_low_err++;
+				$pb_correct_seq.=">$new_id\n$correct_seq\n";
+				$pb_filter_out_rpt2.="$rid\t$left_clip\t$right_clip\t$correct_len\t$edit_four\t$edit_rate\n";
+			}
+			else
+			{
+				$count_high_err++;
+				$pb_filter_out_rpt1.="$rid\t$left_clip\t$right_clip\t$correct_len\t$edit_four\t$edit_rate\n";
+			}
+		} else {
+			$count_err_junc++;
+			$pb_filter_out_rpt1.="$rid\t$left_clip\t$right_clip\t$correct_len\t$edit_four\t$edit_rate\n";
+			#$pb_filter_out_rpt2.="$junc_desc";
+		}
+	}
+
+	print "No. of Read short than 300: $count_short\n";
+	print "       Read with low ERR (<=25%, kept): $count_low_err\n";
+	print "       Read with high ERR (>25%, remove): $count_high_err\n";
+	print "No. of Read with bad junc: $count_err_junc\n";
 
 	# save output to file for next correction
-	my $out_prefix = $pb_sam; $out_prefix =~ s/\.sam$//;
-	my $pb_raw_file = $out_prefix."_raw.fasta";
 	my $pb_correct_file = $out_prefix."_correct.fasta";
-	my $pb_correct_samf = $out_prefix."_correct.sam";
+	my $pb_softclip_file = $out_prefix."_softclip.fasta";
 
-	save_file($pb_raw_seq, $pb_raw_file);
 	save_file($pb_correct_seq, $pb_correct_file);
-	save_file($pb_correct_sam, $pb_correct_samf);
+	save_file($pb_softclip_seq, $pb_softclip_file);
+	save_file($pb_filter_out_rpt1, $out_prefix."_RM_ReadRpt.txt");
+	save_file($pb_filter_out_rpt2, $out_prefix."_KP_ReadRpt.txt");
+	#save_file($pb_filter_out_rpt2, $out_prefix."_RM_JuncRpt.txt");
 }
 
 # child of pb_correctF
@@ -521,8 +798,6 @@ USAGE: $0 -t formatCCS [options] isoseq_draft.fasta
 		print $out ">$nid\n$seq\n";
 	}
 	$out->close;
-
-		
 }
 
 =head2
@@ -567,5 +842,123 @@ USAGE: $0 -t [tool]
 	exit;
 }
 
+
+=head2
+ parse_gtf -- parse gtf file, return gtf information
+=cut
+sub parse_gtf
+{
+        my $input_file = shift;
+
+        my %trans_info; # key: tid, chr, exon, gene, strand
+
+        my $fh = IO::File->new($input_file) || die $!;
+        while(<$fh>)
+        {
+                chomp;
+                next if $_ =~ m/^#/;
+                my @a = split(/\t/, $_);
+
+                if ($a[2] eq 'exon')
+                {
+                        # analyzing the attribute 
+                        my %attr_value;
+                        my @b = split(/; /, $a[8]);
+                        foreach my $b (@b) {
+                                my @c = split(/ /, $b);
+                                die "[ERR]attr $b in $a[8]\n" unless @c == 2;
+                                $c[1] =~ s/"//ig;
+                                $attr_value{$c[0]} = $c[1];
+                        }
+
+                        die "[ERR]No transcript id\n" unless defined $attr_value{'transcript_id'};
+                        die "[ERR]No gene id\n" unless defined $attr_value{'gene_id'};
+                        my ($tid, $gid) = ($attr_value{'transcript_id'}, $attr_value{'gene_id'});
+
+                        if ( defined $trans_info{$tid}{'chr'} ) {
+                                die "[ERR]inconsistency chr for $tid\n" if $trans_info{$tid}{'chr'} ne $a[0];
+                        } else {
+                                $trans_info{$tid}{'chr'} = $a[0];
+                        }
+
+                        if ( defined $trans_info{$tid}{'gid'} ) {
+                                die "[ERR]inconsistency gid for $tid\n" if $trans_info{$tid}{'gid'} ne $gid;
+                        } else {
+                                $trans_info{$tid}{'gid'} = $gid;
+                        }
+
+                        if ( defined $trans_info{$tid}{'strand'} ) {
+                                die "[ERR]inconsistency strand for $tid\n" if $trans_info{$tid}{'strand'} ne $a[6];
+                        } else {
+                                $trans_info{$tid}{'strand'} = $a[6];
+                        }
+
+                        if ( defined $trans_info{$tid}{'exon'}) {
+                                $trans_info{$tid}{'exon'}.="\t".$a[3]."\t".$a[4];
+                        } else {
+                                $trans_info{$tid}{'exon'} = $a[3]."\t".$a[4];
+                        }
+                }
+        }
+        $fh->close;
+
+        return %trans_info;
+}
+
+sub retrive_splice_site
+{
+	my ($reference, $junc_attr) = @_; 
+
+	# convert junc_attr to junc_start hash
+	# key: chr \t start
+	# value: array of end; 
+	my %junc_start;
+
+	foreach my $jk (sort keys %$junc_attr) {
+		my @a = split("#", $jk);
+		my $js_key = $a[0]."\t".$a[1];
+		push(@{$junc_start{$js_key}}, $a[2]);
+	}
+
+        my $in = Bio::SeqIO->new(-format=>'fasta', -file=>$reference);
+        while(my $inseq = $in->next_seq)
+        {
+                my $chr = $inseq->id;
+                my $seq = $inseq->seq;
+                my $len = $inseq->length;
+
+                # below start is the exon end
+                # below end is the exon start
+                for(1 .. $len)
+                {
+                        my $start = $_;
+
+                        if ( defined $junc_start{$chr."\t".$start} )
+                        {
+                                my @end = @{$junc_start{$chr."\t".$start}};
+                                foreach my $end (@end)
+                                {
+					my $jk = $chr."#".$start."#".$end;
+                                        my $start_base = uc(substr($seq, $start-1, 2));
+                                        my $end_base = uc(substr($seq, $end-2, 2));
+                                        my $junction = $start_base."-".$end_base;
+					$$junc_attr{$jk}{'SPL'} = $junction;
+                                }
+                        }
+                }
+        }
+}
+
+# check if file exist
+sub check_file
+{
+	my @file = @_;
+	foreach my $f (@file) {
+		unless (-s $f) {
+			print "[ERR]file not exist: $f\n";
+			exit;
+		}
+	}
+}
 
 
