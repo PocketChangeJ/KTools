@@ -1,0 +1,6 @@
+1.6
+	* Fixed a bug in previous versions that failed to remove all of the temporary files.
+
+	* Added debugging support.
+
+	* Updated script to use FASTA35

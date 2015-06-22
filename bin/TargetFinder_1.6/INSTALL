@@ -1,0 +1,35 @@
+INSTALL:
+========
+
+
+Table of contents:
+==================
+
+    * Minimum Requirements
+    * Installation
+
+Minimum Requirements
+====================
+
+ *Required Software Packages:
+   o Perl (tested using v5.8)
+   o FASTA35 binaries from (http://fasta.bioch.virginia.edu/fasta_www2/fasta_down.shtml)
+
+ *Required Perl Modules:
+   o File::Temp
+   o Getopt::Std
+
+Installation
+============
+
+ 1. Make sure that 'mkdir' is in your path.
+
+ 2. Set an environmental variable 'HOME' as the location of your home directory.
+    Note: you must have read/write access to this directory so that a temporary directory
+    can be made.
+
+ 3. Make sure that 'fasta35' is in your path.
+
+ 4. Make sure that the required modules are in your Perl library path.
+
+ 5. Make sure that targetfinder.pl is executable (use 'chmod' to change privileges).
