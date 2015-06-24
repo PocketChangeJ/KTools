@@ -16,17 +16,51 @@ my %options;
 getopts('a:b:c:d:e:f:g:i:j:k:l:m:n:o:p:q:r:s:t:u:v:w:x:y:z:h', \%options);
 unless (defined $options{'t'} ) { usage($version); }
 
-if	($options{'t'} eq 'GSTAr')		{ srna_GSTAr(\%options, \@ARGV); }	# target prediction using GSTAr
-elsif	($options{'t'} eq 'targetfinder')	{ srna_targetfinder(\%options, \@ARGV); }		# target prediction using targetfinder
-elsif	($options{'t'} eq 'feitarget')		{ srna_feitarget(\%options, \@ARGV); }	# target prediction using feitarget
+if	($options{'t'} eq 'GSTAr')		{ srna_GSTAr(\%options, \@ARGV); }		# target prediction using GSTAr
+elsif	($options{'t'} eq 'targetfinder')	{ srna_targetfinder(\%options, \@ARGV); }	# target prediction using targetfinder
+elsif	($options{'t'} eq 'feitarget')		{ srna_feitarget(\%options, \@ARGV); }		# target prediction using feitarget
 elsif	($options{'t'} eq 'combine')		{ srna_target_combine(\%options, \@ARGV); } 	# combine the target pred results
-elsif	($options{'t'} eq 'convertF2G')		{ srna_convertF2G(@ARGV); }		# convert fei to GSTAr format
-elsif	($options{'t'} eq 'predcmb')		{ srna_pred_cmb(\%options, \@ARGV);}	# combine analysis 
+elsif	($options{'t'} eq 'convertF2G')		{ srna_convertF2G(@ARGV); }			# convert fei to GSTAr format
+elsif   ($options{'t'} eq 'filterGSTAr')	{ srna_filterGSTAr(@ARGV); }			# filter GSTAr result using score
+elsif	($options{'t'} eq 'predcmb')		{ srna_pred_cmb(\%options, \@ARGV);}		# combine analysis 
 else	{ usage($version); }
 
 #################################################################
 # kentnf: subroutine						#
 #################################################################
+
+=head2
+ srna_filterGSTAr: filter GSTAr using score
+=cut
+sub srna_filterGSTAr
+{
+	my ($input, $score ,$output) = @_;
+	my $usage = qq'
+USAGE $0 -t filterGSTAr input score output
+';
+	print $usage and exit unless (defined $input && defined $score && defined $output);
+	die "[ERR]file exist $input\n" unless -s $input;
+	die "[ERR]file exist $input\n" if -s $output;	
+	die "[ERR]score $score\n" unless $score > 0;
+
+	my $fho = IO::File->new(">".$output) || die $!;
+	my $fh = IO::File->new($input) || die $!;
+	while(<$fh>)
+	{
+		chomp;
+		my @a = split(/\t/, $_);
+		if ($_ =~ m/^#/ || $_ =~ m/^Query/) {
+			print $fho $_."\n";
+			next;
+		}
+
+		if ($a[8] <= $score) {
+			print $fho $_."\n";
+		}
+	}
+	$fh->close;
+	$fho->close;
+}
 
 =head2
  srna_target_pred : predict of sRNA target using combined method
@@ -620,6 +654,7 @@ USAGE $0 -t tools [options]
 	combine		combine the sRNA target prediction results
 	
 	convertF2G	convert target format from fei to GSTAr
+	filterGSTAr	filter the GSTAr result using score
 
 	predcmb		cleavage site prediction using combined target site
 

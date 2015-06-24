@@ -174,9 +174,6 @@ unless($opt_q) {
 
 # Transcriptomes must match!
 unless($G_header{'transcripts'} eq $deg_header{'tx_name'}) {
-	print $G_header{'transcripts'}." AAA\n";
-	print $deg_header{'tx_name'}." BBB\n";
-
     	die "\nFATAL: Transcriptome has to be the same for the degradome density file and the GSTAr alignment file\!\n$help";
 }
 
